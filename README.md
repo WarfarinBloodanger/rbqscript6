@@ -1,4 +1,4 @@
-#RBQScript 6
+# RBQScript 6
 
 ## 请注意，新版 RBQScript （指 6.0 及以上，下同）与旧版 RBQScript **不兼容**
 
