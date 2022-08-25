@@ -66,7 +66,7 @@ void outputbc(const codeset&s){
 	int i=0;
 	for(auto a:s){
 		printf("%02X ",a);
-		if(i%9==7&&i!=s.size()-1)printf("\n  ");i++;
+		if(i%9==8&&i!=s.size()-1)printf("\n  ");i++;
 	}
 	if(i%9)while(i%9!=8)printf("   "),i++;
 	putchar(' ');
