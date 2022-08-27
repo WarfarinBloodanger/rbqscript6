@@ -59,17 +59,25 @@ char excpbuf[1024];
 #define fatal(str,...) do{sprintf(excpbuf,str,__VA_ARGS__);throw (string)excpbuf;}while(0)
 void output(string opname,const string&value,const string&comment){
 	for(uint i=0;i<opname.size();i++)opname[i]=tolower(opname[i]); 
-	printf("%16s  %12s  %s\n",opname.c_str(),((value.size()>12)?value.substr(0,9)+"...":value).c_str(),comment.c_str());
+	printf("%16s %16s %16s\n",opname.c_str(),((value.size()>12)?value.substr(0,9)+"...":value).c_str(),comment.c_str());
 }
-void outputbc(const codeset&s){
-	printf("  ");
+void outputbc(uint ip,const codeset&s){
+	printf("[%04d]  ",ip);
 	int i=0;
+	if(s.size()%9==0){
+		for(auto a:s){
+			printf("%02X ",a);
+			if(i%9==8&&i!=s.size()-1)printf("\n        ");
+			i++;
+		}
+		return;
+	}
 	for(auto a:s){
 		printf("%02X ",a);
-		if(i%8==7&&i!=s.size()-1)printf("\n  ");i++;
+		if(i%9==8&&i!=s.size()-1)printf("\n        ");
+		i++;
 	}
-	while(i%8!=7)printf("   "),i++;
-	putchar(' ');
+	if(s.size()%9)while(i%9)printf("   "),i++;
 }
 struct bitparse{
 	union{
@@ -103,7 +111,7 @@ void runbytes(const codeset&s){
 	uint ip=0,oldip=0,len=s.size();
 	while(ip<len){
 		codeset used;
-		#define addall() do{for(uint i=oldip;i<=ip;i++)used.push_back(s[i]);outputbc(used);}while(0)
+		#define addall() do{for(uint i=oldip;i<=ip;i++)used.push_back(s[i]);outputbc(oldip,used);}while(0)
 		switch(s[ip]){
 			default:{
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
@@ -252,7 +260,7 @@ void runbytes(const codeset&s){
 				ip--;
 				int fid=newfunc(pid,instr,upvs);
 				addall();
-				output("LOADFUNC","$"+num2str(fid),"");
+				output("LOADFUNC","","set to <"+num2str(fid)+">");
 				break;
 			}
 			case CALL:{
@@ -272,23 +280,24 @@ void runbytes(const codeset&s){
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				addall();
-				output("JUMP",num2str(offset),"jump to "+num2str(3+offset+1));
+				output("JUMP",num2str(offset),"jump to "+num2str(ip+3+offset+1));
+				ip+=3; 
 				break;
 			}
 			case JUMP_IF_FALSE:{
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
 				addall();
-				output("JUMP_IF_FALSE",num2str(offset),"jump to "+num2str(3+offset+1));
+				output("JUMP_IF_FALSE",num2str(offset),"jump to "+num2str(ip+3+offset+1));
+				ip+=3;
 				break;
 			}
 			case LOOP:{
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip-=1+offset;
 				addall();
-				output("LOOP",num2str(offset),"loop to "+num2str(3+offset+1));
+				output("LOOP",num2str(offset),"loop to "+num2str(ip-1-offset+1));
+				ip+=3;
 				break;
 			}
 			case NEWFRAME:{
@@ -306,7 +315,7 @@ void runbytes(const codeset&s){
 	}
 }
 void seekcode(const func&f){
-	cout<<"\nfunction $"<<f.id<<endl;
+	cout<<"\nfunction <function "<<f.id<<">"<<endl;
 	cout<<"  arguments:";
 	for(auto a:f.pid)cout<<a<<' ';
 	cout<<endl;
@@ -345,17 +354,18 @@ void initvm(){
 	builtin[++r]="license";
 	usedfuncs=1024;
 }
-int main(int argc,char **argv){
+void see(string arg){
 	codeset s;
+	ifstream fcin(arg,ios::binary);
+	char c;while(fcin.get(c))s.push_back((uchar)c);
+	int id=newfunc(vector<int>(),s,vector<int>());
+	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();fcin.close();
+}
+int main(int argc,char **argv){
 	if(argc<=1)exit(puts("Usage: rbqup <file1> <file2>...")&&1);
 	initvm();
 	int v=1;for(;v<argc;v++){
 		printf("\n--- File '%s' ---",argv[v]);
-		usedfuncs=1024;
-		ifstream fcin(argv[v],ios::binary);
-		char c;while(fcin.get(c))s.push_back((uchar)c);
-		int id=newfunc(vector<int>(),s,vector<int>());
-		while(!funcq.empty())seekcode(funcq.front()),funcq.pop();
-		fcin.close();
+		usedfuncs=1024,see(argv[v]);
 	} 
 }
