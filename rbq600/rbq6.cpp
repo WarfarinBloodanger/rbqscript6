@@ -3,10 +3,15 @@
 #include<ext/pb_ds/assoc_container.hpp>
 using namespace std;
 using namespace __gnu_pbds;
-typedef uint32_t uint;
 typedef uint64_t ull;
+#define int __int128
+typedef unsigned int uint;
 typedef unsigned char uchar;
 typedef const uchar OPCODE;
+struct hasher{
+	size_t operator()(const int&x)const{return x;}
+	size_t operator()(const uint&x)const{return x;}
+};
 const string HELP = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6] or send email to arknightswarfarin@163.com for more.";
 const string CREDITS = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
@@ -244,7 +249,7 @@ token readtok(char type){
 	if(curtok>toks.size()||toks[curtok].type!=type)fatal("expected token %s at line %d, column %d",tokenname[type],toks[curtok].line,toks[curtok].column);
 	return toks[curtok++];
 }
-umap<uint,string>names;
+umap<uint,string,hasher>names;
 vector<umap<string,uint>> scopes;
 vector<uint> namecnt;
 vector<set<uint>> used_upvalues;
@@ -737,9 +742,9 @@ struct pool{
 	void push_back(const T&t){ctt.push_back(t);};
 	T& operator[](const uint&loc){if(loc>ctt.size())ctt.resize(loc);return ctt[loc];}
 };
-template <typename T,typename R>
+template <typename T,typename R,typename cmp>
 struct hashtable{
-	umap<T,R> ctt;
+	umap<T,R,cmp> ctt;
 	uint size(){return ctt.size();};
 	bool has(const T&key){return ctt.find(key)!=ctt.end();}
 	R& operator[](const T&loc){return ctt[loc];}
@@ -751,21 +756,21 @@ struct func{
 const uint regoffset=2048;
 const uint arrlength=1024*1024*2;
 const uint objresv=arrlength/2;
-vector<hashtable<int,val>>frames;
-hashtable<string,uint>keyhash;
+vector<hashtable<int,val,hasher>>frames;
+umap<string,uint>keyhash;
 int usedhashslot;
-uint getkeyhash(const string&s){if(!keyhash.has(s))return keyhash[s]=++usedhashslot+objresv;return keyhash[s];}
-umap<int,umap<int,val>>upvalueframe;
-umap<int,func>functable;
-umap<int,val>heap;
-umap<int,uint>arrlens;
+uint getkeyhash(const string&s){if(keyhash.find(s)!=keyhash.end())return keyhash[s]=++usedhashslot+objresv;return keyhash[s];}
+umap<int,umap<int,val,hasher>,hasher>upvalueframe;
+umap<int,func,hasher>functable;
+umap<int,val,hasher>heap;
+umap<int,uint,hasher>arrlens;
 vector<uint>regs;
 vector<uint>funcstack; 
 uint usedarrs;
 uint usedfuncs;
 int vmstack[RUNSTACK_SIZE];
 typedef int* runstack;
-inline void newframe(){frames.push_back(hashtable<int,val>()),regs.push_back(0);}
+inline void newframe(){frames.push_back(hashtable<int,val,hasher>()),regs.push_back(0);}
 inline void delframe(){frames.pop_back(),regs.pop_back();}
 inline val& generef(const int&addr,bool lcl=0){
 	if(addr<0)return heap[addr];
@@ -803,12 +808,6 @@ int runbytes(const codeset&s,runstack stk_start){
 		switch(s[ip]){
 			default:{
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
-				break;
-			}
-			case SEEK:{
-				for(runstack a=bottom;a!=curstk;a++){
-					cout<<"["<<(*a)<<": "<<generef(*(a)).tostr()<<endl;
-				}
 				break;
 			}
 			case LOADSTR:{
@@ -1220,7 +1219,7 @@ namespace launcher{
 		vm::runbytes(s,vm::vmstack);
 	}
 }
-int main(int argc,char **argv){
+signed main(signed argc,char **argv){
 	if(argc<=1)launcher::cli();
 	else if(argc==2&&argv[1][0]!='-')try{launcher::run_rbq(argv[1]);}catch(string &s){cout<<s<<endl;}
 	else{
