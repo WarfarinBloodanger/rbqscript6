@@ -4,7 +4,6 @@
 using namespace std;
 using namespace __gnu_pbds;
 typedef uint64_t ull;
-#define int __int128
 typedef unsigned int uint;
 typedef unsigned char uchar;
 typedef const uchar OPCODE;
