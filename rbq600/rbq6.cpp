@@ -4,11 +4,10 @@
 using namespace std;
 using namespace __gnu_pbds;
 typedef uint64_t ull;
-typedef unsigned int uint;
+typedef uint32_t uint;
 typedef unsigned char uchar;
 typedef const uchar OPCODE;
 struct hasher{
-	size_t operator()(const int&x)const{return x;}
 	size_t operator()(const uint&x)const{return x;}
 };
 const string HELP = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
@@ -637,7 +636,7 @@ struct val{
 	static val maketrue(){val v;v.type=TTRUE;return v;}
 	static val makefalse(){val v;v.type=TFALSE;return v;}
 	val(valtype t){type=t;}
-	val(int ref,valtype t){type=t,num=ref;}
+	val(int64_t ref,valtype t){type=t,num=ref;}
 	bool is_true()const{return !(type==TFALSE||type==TNULL||(type==TNUM&&num==0));}
 	string tostr()const{
 		switch(type){
@@ -753,25 +752,25 @@ struct func{
 	codeset instr;
 };
 const uint regoffset=2048;
-const uint arrlength=1024*1024*2;
+const uint arrlength=1024*1024*1024;
 const uint objresv=arrlength/2;
-vector<hashtable<int,val,hasher>>frames;
+vector<hashtable<ull,val,hasher>>frames;
 umap<string,uint>keyhash;
-int usedhashslot;
-uint getkeyhash(const string&s){if(keyhash.find(s)!=keyhash.end())return keyhash[s]=++usedhashslot+objresv;return keyhash[s];}
-umap<int,umap<int,val,hasher>,hasher>upvalueframe;
-umap<int,func,hasher>functable;
-umap<int,val,hasher>heap;
-umap<int,uint,hasher>arrlens;
+ull usedhashslot;
+ull getkeyhash(const string&s){if(keyhash.find(s)!=keyhash.end())return keyhash[s]=++usedhashslot+objresv;return keyhash[s];}
+umap<ull,umap<ull,val,hasher>,hasher>upvalueframe;
+umap<ull,func,hasher>functable;
+umap<ull,val,hasher>heap;
+umap<ull,ull,hasher>arrlens;
 vector<uint>regs;
 vector<uint>funcstack; 
-uint usedarrs;
-uint usedfuncs;
-int vmstack[RUNSTACK_SIZE];
-typedef int* runstack;
-inline void newframe(){frames.push_back(hashtable<int,val,hasher>()),regs.push_back(0);}
+ull usedarrs;
+ull usedfuncs;
+ull vmstack[RUNSTACK_SIZE];
+typedef ull* runstack;
+inline void newframe(){frames.push_back(hashtable<ull,val,hasher>()),regs.push_back(0);}
 inline void delframe(){frames.pop_back(),regs.pop_back();}
-inline val& generef(const int&addr,bool lcl=0){
+inline val& generef(const ull&addr,bool lcl=0){
 	if(addr<0)return heap[addr];
 	if(addr>=0&&!lcl){
 		for(uint i=frames.size()-1;~i;i--)if(frames[i].has(addr))return frames[i][addr];
@@ -779,22 +778,22 @@ inline val& generef(const int&addr,bool lcl=0){
 	}
 	return frames[frames.size()-1][addr];
 }
-inline val& localref(int addr){return frames[frames.size()-1][addr]=val(TNULL),frames[frames.size()-1][addr];}
-inline uint newreg(){return regs.size()*regoffset+(++regs[regs.size()-1]);}
+inline val& localref(ull addr){return frames[frames.size()-1][addr]=val(TNULL),frames[frames.size()-1][addr];}
+inline ull newreg(){return regs.size()*regoffset+(++regs[regs.size()-1]);}
 inline void delreg(){regs[regs.size()-1]--;}
-inline void freereg(const uint&addr){for(int i=frames.size()-1;~i;i--)if(frames[i].has(addr))frames[i].ctt.erase(addr);}
-inline int allocarr(){return arrlength*(++usedarrs);}
-inline uint getlen(val v){int addr;if(v.type==TSTR)return v.str.length();if(v.type==TREF)return addr=v.num,arrlens[(addr)/arrlength]+1;return 0;}
-inline void mdfaddr(int addr){if(addr>=0)return;addr=-addr;arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
-inline int getaddr(const val&addr,const val&offset){
-	int r=0;
+inline void freereg(const uint&addr){for(ull i=frames.size()-1;~i;i--)if(frames[i].has(addr))frames[i].ctt.erase(addr);}
+inline ull allocarr(){return arrlength*(++usedarrs);}
+inline ull getlen(val v){ull addr;if(v.type==TSTR)return v.str.length();if(v.type==TREF)return addr=v.num,arrlens[(addr)/arrlength]+1;return 0;}
+inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
+inline ull getaddr(const val&addr,const val&offset){
+	ull r=0;
 	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val(((string)"")+(addr.str[offset.num]));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
 	else if(addr.type==TREF&&offset.type==TSTR)return(-(addr.num+getkeyhash(offset.str)));
 	else fatal("operation '[]' can't be applied between '%s' and '%s'",valtypename[addr.type],valtypename[offset.type]);
 	return r;
 }
-inline int newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&upvs){
+inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&upvs){
 	usedfuncs++,functable[usedfuncs].pid=pid,functable[usedfuncs].instr=instr,functable[usedfuncs].upvs=upvs;
 	for(auto a:upvs)upvalueframe[usedfuncs][a]=generef(a);
 	return usedfuncs;
@@ -821,19 +820,19 @@ int runbytes(const codeset&s,runstack stk_start){
 				break;
 			}
 			case LOADTRUE:{
-				int nr=newreg();generef(nr)=val(0,TTRUE),*curstk=nr,curstk++;
+				ull nr=newreg();generef(nr)=val(0,TTRUE),*curstk=nr,curstk++;
 				break;
 			}
 			case LOADFALSE:{
-				int nr=newreg();generef(nr)=val(0,TFALSE),*curstk=nr,curstk++;
+				ull nr=newreg();generef(nr)=val(0,TFALSE),*curstk=nr,curstk++;
 				break;
 			}
 			case LOADNULL:{
-				int nr=newreg();generef(nr)=val(0,TNULL),*curstk=nr,curstk++;
+				ull nr=newreg();generef(nr)=val(0,TNULL),*curstk=nr,curstk++;
 				break;
 			}
 			case LOADUNDEFINED:{
-				int nr=newreg();generef(nr)=val(0,TUNDEF),*curstk=nr,curstk++;
+				ull nr=newreg();generef(nr)=val(0,TUNDEF),*curstk=nr,curstk++;
 				break;
 			}
 			case LOADVAR:case LOADVARLOCAL:{
@@ -912,7 +911,7 @@ int runbytes(const codeset&s,runstack stk_start){
 				ip++;
 				int len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
-				int loc=allocarr(),nr=newreg();
+				ull loc=allocarr(),nr=newreg();
 				while(len--){
 					generef(-(loc+len))=generef(*(curstk-1)),mdfaddr(-(loc+len));
 					if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
@@ -923,9 +922,9 @@ int runbytes(const codeset&s,runstack stk_start){
 			}
 			case LOADOBJ:{
 				ip++;
-				int len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ull len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
-				int loc=allocarr(),nr=newreg();
+				ull loc=allocarr(),nr=newreg();
 				val r=val(loc,TREF),key; 
 				while(len--){
 					key=generef(*(curstk-1));
@@ -939,7 +938,7 @@ int runbytes(const codeset&s,runstack stk_start){
 				break;
 			}
 			case GETADDR:{
-				int nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
+				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
 				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				break;
@@ -952,13 +951,13 @@ int runbytes(const codeset&s,runstack stk_start){
 				ip+=4;
 				uint upvcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=4;
-				int nr=newreg(),v;
+				ull nr=newreg(),v;
 				vector<int> pid,upvs;codeset instr;
 				while(pcnt--)pid.push_back(s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
 				while(upvcnt--)upvs.push_back(v=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
 				while(size--)instr.push_back(s[ip]),ip++;
 				ip--;
-				int fid=newfunc(pid,instr,upvs);
+				ull fid=newfunc(pid,instr,upvs);
 				generef(nr)=val(fid,TFUNC);
 				*curstk=nr,curstk++;
 				break;
@@ -975,15 +974,15 @@ int runbytes(const codeset&s,runstack stk_start){
 				}
 				if(generef(*(curstk-1)).type!=TFUNC)fatal("can't call a non-function type '%s'(%s)",valtypename[generef(*(curstk-1)).type],generef(*(curstk-1)).tostr().c_str());
 				
-				int fid=generef(*(curstk-1)).num;
+				ull fid=generef(*(curstk-1)).num;
 				if(*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 				curstk--;
-				int nr=call_func(fid,args,curstk);*curstk=nr,curstk++;
+				ull nr=call_func(fid,args,curstk);*curstk=nr,curstk++;
 				for(auto a:freelist)freereg(a);
 				break;
 			}
 			case RETURN:{
-				int nr=newreg();
+				ull nr=newreg();
 				generef(nr)=generef(*(curstk-1));
 				return nr;
 			}
@@ -1015,7 +1014,7 @@ int runbytes(const codeset&s,runstack stk_start){
 		ip++;
 	}
 }
-set<int> builtin;
+set<ull> builtin;
 
 namespace file_manager{
 	char fbuffer[2048];
