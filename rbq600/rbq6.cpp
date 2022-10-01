@@ -3,7 +3,7 @@
 #include<ext/pb_ds/assoc_container.hpp>
 using namespace std;
 using namespace __gnu_pbds;
-typedef uint64_t ull;
+typedef int64_t ull;
 typedef uint32_t uint;
 typedef unsigned char uchar;
 typedef const uchar OPCODE;
@@ -142,7 +142,7 @@ void tokenize(char *src){
 			cur.type=getidtype(cur.val),toks.push_back(cur); 
 		}
 		else if(isdigit(src[loc])||src[loc]=='.'){
-			bool d=0,e=0;
+			bool d=0,e=0,n=0;
 			if(src[loc]=='0'&&loc+1<len&&(src[loc+1]=='x'||src[loc+1]=='X')){
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
@@ -152,8 +152,9 @@ void tokenize(char *src){
 			else{
 				while(loc<len&&isdigit(src[loc])||src[loc]=='.'||src[loc]=='E'||src[loc]=='e'||src[loc]=='-'){
 					if(src[loc]=='.')if(!d)d=1;else break;
-					if(src[loc]=='e'||src[loc]=='E')if(!e)e=1;else break;
+					if(src[loc]=='e'||src[loc]=='E')if(n&&!e)e=1;else break;
 					if(src[loc]=='-')if(loc-1>=0&&(src[loc-1]=='e'||src[loc-1]=='E'));else break;
+					if(isdigit(src[loc]))n=1;
 					cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				}
 				if(cur.val.size()==1&&cur.val[0]=='.')cur.type=TOK_DOT;
@@ -755,9 +756,9 @@ const uint regoffset=2048;
 const uint arrlength=1024*1024*1024;
 const uint objresv=arrlength/2;
 vector<hashtable<ull,val,hasher>>frames;
-umap<string,uint>keyhash;
+umap<string,ull>keyhash;
 ull usedhashslot;
-ull getkeyhash(const string&s){if(keyhash.find(s)!=keyhash.end())return keyhash[s]=++usedhashslot+objresv;return keyhash[s];}
+ull getkeyhash(const string&s){if(keyhash.find(s)==keyhash.end())return keyhash[s]=(++usedhashslot)+objresv;return keyhash[s];}
 umap<ull,umap<ull,val,hasher>,hasher>upvalueframe;
 umap<ull,func,hasher>functable;
 umap<ull,val,hasher>heap;
@@ -787,7 +788,7 @@ inline ull getlen(val v){ull addr;if(v.type==TSTR)return v.str.length();if(v.typ
 inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
 inline ull getaddr(const val&addr,const val&offset){
 	ull r=0;
-	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val(((string)"")+(addr.str[offset.num]));return r;}
+	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val((addr.str.size()>offset.num?((string)"")+addr.str[int(offset.num)]:""));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
 	else if(addr.type==TREF&&offset.type==TSTR)return(-(addr.num+getkeyhash(offset.str)));
 	else fatal("operation '[]' can't be applied between '%s' and '%s'",valtypename[addr.type],valtypename[offset.type]);
@@ -1051,7 +1052,7 @@ inline int call_builtin(const int&fid,const vector<int>&args){
 	#define arg(x) (generef(param(x)))
 	#define valtype(x) (arg(x).type)
 	#define chktype(x,t)\
-	do{if(valtype(x)!=t)fatal("argument %d requires '%s' for %d, got '%s'\n",x,valtypename[x],fid,valtypename[valtype(x)]);}while(0)
+	do{if(valtype(x)!=t)fatal("argument %d requires '%s' for %d, got '%s'\n",x,valtypename[t],fid,valtypename[valtype(x)]);}while(0)
 	switch(fid){
 		case 1:for(uint i=0;i<args.size();i++)cout<<arg(i).tostr()<<' ';cout<<endl;retv=args.size();break;
 		case 2:chktype(0,TNUM);retv=arg(0);exit(arg(0).num);break;
@@ -1079,6 +1080,8 @@ inline int call_builtin(const int&fid,const vector<int>&args){
 		case 19:retv=rand();break;
 		case 20:chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
 		case 21:retv=getlen(arg(0));break;
+		case 27:chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
+		case 28:chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
 		default:exit(printf("Unknown builtin function id %d\n",fid)&&0);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1130,6 +1133,8 @@ void initvm(){
 	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("help"))=val(HELP);
 	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("copyright"))=val(COPYRIGHT);
 	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("license"))=val(LICENSE);
+	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("ascii"))=val(r,TFUNC);
+	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("char"))=val(r,TFUNC);
 	usedfuncs=1024;
 	usedname=1024;
 }
@@ -1180,7 +1185,7 @@ namespace launcher{
 			for(uint i=0;i<str.size();i++)src[i]=str[i];src[str.size()]='\0';
 			tokenize(src);codeset c;
 			while(curtok<toks.size())concat(c,compile());
-			if(c[c.size()-1]==POP)c[c.size()-1]=RETURN;
+			if(c.size()&&c[c.size()-1]==POP)c[c.size()-1]=RETURN;
 			cout<<vm::generef(vm::runbytes(c,vm::vmstack)).tostr()<<endl;
 		}catch(string&s){cout<<s<<endl;}
 			cout<<">>> ";
