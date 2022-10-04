@@ -1033,7 +1033,7 @@ namespace file_manager{
 		return size-1;
 	}
 	inline void check_handle(int handle){if(handle<0||handle>=size)exit(puts(("invalid handle: "+num2str(handle)).c_str())&&0);}
-	inline void file_close(int handle){check_handle(handle);fclose(file_ptrs[handle]);}
+	inline bool file_close(int handle){check_handle(handle);return fclose(file_ptrs[handle]);}
 	inline bool file_eof(int handle){check_handle(handle);return feof(file_ptrs[handle]);}
 	inline string fread_string(int handle){check_handle(handle);fscanf(file_ptrs[handle],"%s",fbuffer);return fbuffer;}
 	inline string fread_line(int handle){
@@ -1045,6 +1045,11 @@ namespace file_manager{
 	void fwrite_string(int handle,string text){check_handle(handle);fprintf(file_ptrs[handle],"%s",text.c_str());fflush(file_ptrs[handle]);}
 	inline double fread_number(int handle){check_handle(handle);return atof(fread_string(handle).c_str());}
 	inline void fwrite_number(int handle,double x){check_handle(handle);fprintf(file_ptrs[handle],"%.14g",x);fflush(file_ptrs[handle]);}
+	inline double read_number(){double d;cin>>d;return d;}
+	inline string read_string(){string s;cin>>s;return s;}
+	inline string read_line(){string s;getline(cin,s);return s;}
+	inline string read_getchar(){char c=getchar();return (string)""+c;}
+	inline bool read_eof(){return cin.eof();}
 };
 inline int call_builtin(const int&fid,const vector<int>&args){
 	#define param(x) (args[args.size()-1-(x)])
@@ -1056,32 +1061,39 @@ inline int call_builtin(const int&fid,const vector<int>&args){
 	switch(fid){
 		case 1:for(uint i=0;i<args.size();i++)cout<<arg(i).tostr()<<' ';cout<<endl;retv=args.size();break;
 		case 2:chktype(0,TNUM);retv=arg(0);exit(arg(0).num);break;
-		case 3:chktype(0,TNUM);retv=sin(arg(0).num);break;
-		case 4:chktype(0,TNUM);retv=cos(arg(0).num);break;
-		case 5:chktype(0,TNUM);retv=tan(arg(0).num);break;
-		case 6:chktype(0,TNUM);retv=asin(arg(0).num);break;
-		case 7:chktype(0,TNUM);retv=acos(arg(0).num);break;
-		case 8:chktype(0,TNUM);retv=atan(arg(0).num);break;
-		case 9:chktype(0,TNUM);chktype(1,TNUM);retv=atan2(arg(0).num,arg(1).num);break;
-		case 10:chktype(0,TNUM);retv=exp(arg(0).num);break;
-		case 11:chktype(0,TNUM);retv=log(arg(0).num);break;
-		case 12:{
+		case 3:retv=file_manager::read_number();break;
+		case 4:retv=file_manager::read_string();break;
+		case 5:retv=file_manager::read_line();break;
+		case 6:retv=file_manager::read_getchar();break;
+		case 7:retv=file_manager::read_eof();break;
+		case 8:chktype(0,TNUM);retv=sin(arg(0).num);break;
+		case 9:chktype(0,TNUM);retv=cos(arg(0).num);break;
+		case 10:chktype(0,TNUM);retv=tan(arg(0).num);break;
+		case 11:chktype(0,TNUM);retv=asin(arg(0).num);break;
+		case 12:chktype(0,TNUM);retv=acos(arg(0).num);break;
+		case 13:chktype(0,TNUM);retv=atan(arg(0).num);break;
+		case 14:chktype(0,TNUM);chktype(1,TNUM);retv=atan2(arg(0).num,arg(1).num);break;
+		case 15:chktype(0,TNUM);retv=exp(arg(0).num);break;
+		case 16:chktype(0,TNUM);retv=log(arg(0).num);break;
+		case 17:{
 			chktype(0,TSTR);
 			if(args.size()==1)retv=file_manager::file_open(arg(0).str);
 			else{chktype(1,TSTR);retv=file_manager::file_open(arg(0).str,arg(1).str);}
 			break;
 		}
-		case 13:chktype(0,TNUM);retv=file_manager::fread_number(arg(0).num);break;
-		case 14:chktype(0,TNUM);retv=file_manager::fread_string(arg(0).num);break;
-		case 15:chktype(0,TNUM);retv=file_manager::fread_line(arg(0).num);break;
-		case 16:chktype(0,TNUM);for(uint i=1;i<args.size();i++)file_manager::fwrite_string(arg(0).num,arg(i).tostr());retv=args.size();break;
-		case 17:retv=clock();break;
-		case 18:chktype(0,TSTR);retv=system(arg(0).str.c_str());break;
-		case 19:retv=rand();break;
-		case 20:chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
-		case 21:retv=getlen(arg(0));break;
-		case 27:chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
-		case 28:chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
+		case 18:chktype(0,TNUM);retv=file_manager::fread_number(arg(0).num);break;
+		case 19:chktype(0,TNUM);retv=file_manager::fread_string(arg(0).num);break;
+		case 20:chktype(0,TNUM);retv=file_manager::fread_line(arg(0).num);break;
+		case 21:chktype(0,TNUM);for(uint i=1;i<args.size();i++)file_manager::fwrite_string(arg(0).num,arg(i).tostr());retv=args.size();break;
+		case 22:chktype(0,TNUM);retv=file_manager::file_close(arg(0).num);break;
+		case 23:chktype(0,TNUM);retv=file_manager::file_eof(arg(0).num);break;
+		case 24:retv=clock();break;
+		case 25:chktype(0,TSTR);retv=system(arg(0).str.c_str());break;
+		case 26:retv=rand();break;
+		case 27:chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
+		case 28:retv=getlen(arg(0));break;
+		case 29:chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
+		case 30:chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
 		default:exit(printf("Unknown builtin function id %d\n",fid)&&0);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1102,39 +1114,40 @@ inline int call_func(const int&fid,const vector<int>&args,runstack stk_start){
 	return generef(nr)=v,nr;
 }
 bool inited;
+inline void initarr(const string&name,const vector<val>&v){
+	val vr=val(allocarr(),TREF);
+	for(int i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i];
+	generef(getid(name))=vr;
+}
+inline void initarr(const string&name,const vector<val>&v,const vector<val>&id){
+	val vr=val(allocarr(),TREF);
+	for(int i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i];
+	generef(getid(name))=vr;
+}
+vector<val> cmdargs;
 void initvm(){
 	if(inited)return;inited=1;
 	memset(vmstack,0,sizeof(vmstack)); 
 	newframe(),funcstack.push_back(-1);
-	int r;
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("print"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("exit"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("sin"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("cos"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("tan"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("asin"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("acos"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("atan"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("atan2"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("exp"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("log"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("file_open"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("file_read_number"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("file_read_string"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("file_read_line"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("file_write"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("clock"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("system"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("rand"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("srand"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("len"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("math_pi"))=val(acos(-1));
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("credits"))=val(CREDITS);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("help"))=val(HELP);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("copyright"))=val(COPYRIGHT);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("license"))=val(LICENSE);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("ascii"))=val(r,TFUNC);
-	r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid("char"))=val(r,TFUNC);
+	int r;vector<val> vt,vr;
+	#define makeobj(name) (initarr(name,vt,vr),vt.clear(),vr.clear())
+	#define func(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC))
+	#define method(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),vt.push_back(val(r,TFUNC)),vr.push_back(val((string)name)))
+	method("print"),method("exit"),method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
+	makeobj("Console");
+	method("sin"),method("cos"),method("tan"),method("asin"),method("acos"),method("atan"),method("atan2"),method("exp"),method("log");
+	vt.push_back(val(acos(-1))),vr.push_back((string)"pi");
+	makeobj("Math");
+	method("open"),method("read_number"),method("read_string"),method("read_line"),method("write"),method("close"),method("eof");
+	makeobj("Fileio");
+	method("clock"),method("system"),method("rand"),method("srand");
+	makeobj("System");
+	func("len"),func("ascii"),func("char");
+	generef(getid("credits"))=val(CREDITS);
+	generef(getid("help"))=val(HELP);
+	generef(getid("copyright"))=val(COPYRIGHT);
+	generef(getid("license"))=val(LICENSE);
+	initarr("args",cmdargs);
 	usedfuncs=1024;
 	usedname=1024;
 }
@@ -1223,6 +1236,7 @@ namespace launcher{
 	}
 }
 signed main(signed argc,char **argv){
+	for(int i=0;i<argc;i++)vm::cmdargs.push_back(vm::val((string)argv[i]));
 	if(argc<=1)launcher::cli();
 	else if(argc==2&&argv[1][0]!='-')try{launcher::run_rbq(argv[1]);}catch(string &s){cout<<s<<endl;}
 	else{
