@@ -1028,7 +1028,6 @@ inline string fmtprint(const string&f,const vector<val>&v){
 			}
 			if(f[i]!='}')fatal("invalid format string '%s': unterminated '{'",f.c_str());
 			if(!ok)fatal("invalid format string '%s': expected an index at position %d",f.c_str(),i);
-			i++;
 			if(idx>=v.size())fatal("invalid format string '%s': unprovided value index %d",f.c_str(),idx);
 			r+=v[idx].tostr();
 		}
@@ -1155,7 +1154,11 @@ void initvm(){
 	memset(vmstack,0,sizeof(vmstack)); 
 	newframe(),funcstack.push_back(-1);
 	int r;vector<val> vt,vr;
-	#define makeobj(name) (clsvt[name]=vt,clsvr[name]=vr,vt.clear(),vr.clear())
+	#define makeobj(name) ({\
+		for(auto a:vt)clsvt[name].push_back(a);\
+		for(auto a:vr)clsvr[name].push_back(a);\
+		vt.clear(),vr.clear();\
+	})
 	#define func(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC))
 	#define method(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),vt.push_back(val(r,TFUNC)),vr.push_back(val((string)name)))
 	method("print"),method("exit"),method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
