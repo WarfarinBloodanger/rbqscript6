@@ -50,3 +50,5 @@
 | `len` | `(seq=any)` |  `number`| 返回序列型对象 seq 的长度，若 seq 不是序列型对象则抛出异常  |
 | `ascii` | `(s=string)` |  `number`| 返回给定字符串 s 第一个字符的 ascii 值 |
 | `char` | `(c=number)` | `string`| 返回 c 对应的 ascii 字符  |
+
+- 【1】 使用同 C 语言相同的打开格式描述符。即 `r/w/a/r+/w+/a+/rb/wb/ab/rb+/wb+/ab+`。
