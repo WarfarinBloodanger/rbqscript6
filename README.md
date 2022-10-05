@@ -2,9 +2,11 @@
 
 ## 请注意，新版 RBQScript （指 6.0 及以上，下同）与旧版 RBQScript **不兼容**
 
-在目前版本，RBQScript 所使用的语法是 JavaScript 的一个子集。完整语法因为太长了不写手册了（
+遵循 GNU 3.0 开源协议。
 
-### 启动方式
+请在对应仓库中下载源代码并自行编译出程序。作者编译器版本及参数：TDM-GCC 4.9.2 64-bit Release，开启 `std=c++11`。
+
+### rbq6
 
 `rbq6 [options/files]`
 
