@@ -655,13 +655,13 @@ struct val{
 		if(type==TNUM&&b.type==TNUM)return num+b.num;
 		if(type==TSTR&&b.type==TSTR)return str+b.str;
 		if(type==TSTR||b.type==TSTR)return tostr()+b.tostr();
-		fatal("operation '+' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);
+		fatal("operation '+' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
 	#define math_method(v)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return num v b.num;\
-		fatal("operation '"#v"' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);\
+		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
 	math_method(-)
@@ -669,14 +669,14 @@ struct val{
 	math_method(/)
 	val operator%(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return fmod(num,b.num);
-		fatal("operation '%' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);
+		fatal("operation '%' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
 	#undef math_method
 	#define int_method(v)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return (ull)num v (ull)b.num;\
-		fatal("operation '"#v"' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);\
+		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
 	int_method(|)
@@ -688,13 +688,13 @@ struct val{
 	val operator<(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return (ull)num<(ull)b.num?maketrue():makefalse();
 		if(type==TSTR&&b.type==TSTR)return str<b.str?maketrue():makefalse();
-		fatal("operation '<' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);
+		fatal("operation '<' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
 	#define bool_method(v)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return num v b.num?maketrue():makefalse();\
-		fatal("operation '"#v"' can't be applied between '%s' and '%s'",valtypename[type],valtypename[b.type]);\
+		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
 	bool_method(<=)
@@ -711,17 +711,17 @@ struct val{
 	#undef bool_method
 	val operator+()const{
 		if(type==TNUM)return +num;
-		fatal("unary operation '+' can't be applied on '%s'",valtypename[type]);
+		fatal("unary operation '+' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
 	val operator-()const{
 		if(type==TNUM)return -num;
-		fatal("unary operation '-' can't be applied on '%s'",valtypename[type]);
+		fatal("unary operation '-' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
 	val operator~()const{
 		if(type==TNUM)return ~(ull)num;
-		fatal("unary operation '~' can't be applied on '%s'",valtypename[type]);
+		fatal("unary operation '~' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
 	#define logic_method(v)\
@@ -1016,7 +1016,27 @@ int runbytes(const codeset&s,runstack stk_start){
 	}
 }
 set<ull> builtin;
-
+inline string fmtprint(const string&f,const vector<val>&v){
+	uint len=f.size();
+	string r="";
+	for(uint i=0;i<len;i++){
+		if(f[i]=='{'){
+			uint idx=0,ok=0;i++;
+			while(i<len&&f[i]!='}'){
+				if(!isdigit(f[i]))fatal("invalid format string '%s': invalid index character '%c'",f.c_str(),f[i]);
+				idx=(idx<<3)+(idx<<1)+(f[i]&15),i++,ok=1;
+			}
+			if(f[i]!='}')fatal("invalid format string '%s': unterminated '{'",f.c_str());
+			if(!ok)fatal("invalid format string '%s': expected an index at position %d",f.c_str(),i);
+			i++;
+			if(idx>=v.size())fatal("invalid format string '%s': unprovided value index %d",f.c_str(),idx);
+			r+=v[idx].tostr();
+		}
+		else if(f[i]=='}')fatal("invalid format string '%s': unmatched '}'",f.c_str());
+		else r+=f[i];
+	}
+	return r;
+}
 namespace file_manager{
 	char fbuffer[2048];
 	FILE *file_ptrs[MAX_FILE_CNT];
@@ -1094,6 +1114,7 @@ inline int call_builtin(const int&fid,const vector<int>&args){
 		case 28:retv=getlen(arg(0));break;
 		case 29:chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
 		case 30:chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
+		case 31:{chktype(0,TSTR);vector<val> vpr;for(uint i=1;i<args.size();i++)vpr.push_back(arg(i));retv=fmtprint(arg(0).str,vpr);break;}
 		default:exit(printf("Unknown builtin function id %d\n",fid)&&0);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1114,23 +1135,27 @@ inline int call_func(const int&fid,const vector<int>&args,runstack stk_start){
 	return generef(nr)=v,nr;
 }
 bool inited;
-inline void initarr(const string&name,const vector<val>&v){
+inline val initarr(const string&name,const vector<val>&v){
 	val vr=val(allocarr(),TREF);
 	for(int i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i];
 	generef(getid(name))=vr;
+	return vr;
 }
-inline void initarr(const string&name,const vector<val>&v,const vector<val>&id){
+inline val initarr(const string&name,const vector<val>&v,const vector<val>&id){
 	val vr=val(allocarr(),TREF);
 	for(int i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i];
 	generef(getid(name))=vr;
+	return vr;
 }
 vector<val> cmdargs;
+umap<string,vector<val>>clsvt;
+umap<string,vector<val>>clsvr;
 void initvm(){
 	if(inited)return;inited=1;
 	memset(vmstack,0,sizeof(vmstack)); 
 	newframe(),funcstack.push_back(-1);
 	int r;vector<val> vt,vr;
-	#define makeobj(name) (initarr(name,vt,vr),vt.clear(),vr.clear())
+	#define makeobj(name) (clsvt[name]=vt,clsvr[name]=vr,vt.clear(),vr.clear())
 	#define func(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC))
 	#define method(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),vt.push_back(val(r,TFUNC)),vr.push_back(val((string)name)))
 	method("print"),method("exit"),method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
@@ -1141,13 +1166,16 @@ void initvm(){
 	method("open"),method("read_number"),method("read_string"),method("read_line"),method("write"),method("close"),method("eof");
 	makeobj("Fileio");
 	method("clock"),method("system"),method("rand"),method("srand");
+	vt.push_back(initarr("#",cmdargs)),vr.push_back((string)"args");
 	makeobj("System");
 	func("len"),func("ascii"),func("char");
 	generef(getid("credits"))=val(CREDITS);
 	generef(getid("help"))=val(HELP);
 	generef(getid("copyright"))=val(COPYRIGHT);
 	generef(getid("license"))=val(LICENSE);
-	initarr("args",cmdargs);
+	method("printf");
+	makeobj("Console");
+	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
 }
@@ -1189,7 +1217,7 @@ namespace launcher{
 		}
 	}
 	void cli(){
-		new_scope(),vm::initvm();
+		try{new_scope(),vm::initvm();}catch(string&s){cout<<s<<endl;exit(0);}
 		cout<<fixed<<setprecision(12)<<"RBQ 6.0\nType \"help\", \"copyright\", \"credits\" or \"license\" for more information."<<endl;
 		cout<<">>> ";
 		while(getline(cin,str)){
