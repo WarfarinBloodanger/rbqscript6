@@ -279,25 +279,25 @@ void runbytes(const codeset&s){
 			case JUMP:{
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				addall();
-				output("JUMP",num2str(offset),"jump to "+num2str(ip+3+offset+1));
 				ip+=3; 
+				addall();
+				output("JUMP",num2str(offset),"jump to "+num2str(ip+offset+1));
 				break;
 			}
 			case JUMP_IF_FALSE:{
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				addall();
-				output("JUMP_IF_FALSE",num2str(offset),"jump to "+num2str(ip+3+offset+1));
 				ip+=3;
+				addall();
+				output("JUMP_IF_FALSE",num2str(offset),"jump to "+num2str(ip+offset+1));
 				break;
 			}
 			case LOOP:{
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				addall();
-				output("LOOP",num2str(offset),"loop to "+num2str(ip-1-offset+1));
 				ip+=3;
+				addall();
+				output("LOOP",num2str(offset),"loop to "+num2str(ip-1-offset+1-3));
 				break;
 			}
 			case NEWFRAME:{
@@ -326,32 +326,6 @@ void seekcode(const func&f){
 }
 void initvm(){
 	int r=0;
-	builtin[++r]="<builtin function print>";
-	builtin[++r]="<builtin function exit>";
-	builtin[++r]="<builtin function sin>";
-	builtin[++r]="<builtin function cos>";
-	builtin[++r]="<builtin function tan>";
-	builtin[++r]="<builtin function asin>";
-	builtin[++r]="<builtin function acos>";
-	builtin[++r]="<builtin function atan>";
-	builtin[++r]="<builtin function atan2>";
-	builtin[++r]="<builtin function exp>";
-	builtin[++r]="<builtin function log>";
-	builtin[++r]="<builtin function file_open>";
-	builtin[++r]="<builtin function file_read_number>";
-	builtin[++r]="<builtin function file_read_string>";
-	builtin[++r]="<builtin function file_read_line>";
-	builtin[++r]="<builtin function file_write>";
-	builtin[++r]="<builtin function clock>";
-	builtin[++r]="<builtin function system>";
-	builtin[++r]="<builtin function rand>";
-	builtin[++r]="<builtin function srand>";
-	builtin[++r]="<builtin function len>";
-	builtin[++r]="math_pi";
-	builtin[++r]="credits";
-	builtin[++r]="help";
-	builtin[++r]="copyright";
-	builtin[++r]="license";
 	usedfuncs=1024;
 }
 void see(string arg){
