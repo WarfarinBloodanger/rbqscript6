@@ -26,7 +26,7 @@
 | `Console.read_line` | `()` | `string`| 读入一个字符串，以换行符为结束标志  |
 | `Console.getchar` | `()` |  `string`|读入单个字符  |
 | `Console.eof` | `()` |  `true/false`|检查读入是否已经结束  |
-| `Console.printf` | `(format=string,...)` | `string` | 以 format 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为附加参数中对应的字符串  |
+| `Console.printf` | `(format=string,...)` | `string` | 以 format 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数  |
 | `Math.sin` | `(x=number)` |  `number`| 返回 sin(x)  |
 | `Math.cos` | `(x=number)` |  `number`| 返回 cos(x)  |
 | `Math.tan` | `(x=number)` |  `number`| 返回 tan(x)  |
