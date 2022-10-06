@@ -1032,26 +1032,6 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	}
 }
 set<ull> builtin;
-inline string fmtprint(const string&f,const vector<val>&v){
-	uint len=f.size();
-	string r="";
-	for(uint i=0;i<len;i++){
-		if(f[i]=='{'){
-			uint idx=0,ok=0;i++;
-			while(i<len&&f[i]!='}'){
-				if(!isdigit(f[i]))fatal("invalid format string '%s': invalid index character '%c'",f.c_str(),f[i]);
-				idx=(idx<<3)+(idx<<1)+(f[i]&15),i++,ok=1;
-			}
-			if(f[i]!='}')fatal("invalid format string '%s': unterminated '{'",f.c_str());
-			if(!ok)fatal("invalid format string '%s': expected an index at position %d",f.c_str(),i);
-			if(idx>=v.size())fatal("invalid format string '%s': unprovided value index %d",f.c_str(),idx);
-			r+=v[idx].tostr();
-		}
-		else if(f[i]=='}')fatal("invalid format string '%s': unmatched '}'",f.c_str());
-		else r+=f[i];
-	}
-	return r;
-}
 namespace file_manager{
 	char fbuffer[2048];
 	FILE *file_ptrs[MAX_FILE_CNT];
@@ -1087,7 +1067,7 @@ namespace file_manager{
 	inline bool read_eof(){return cin.eof();}
 };
 namespace utils{
-	string substring(const string&s,const val&from,const val&to){
+	inline string substring(const string&s,const val&from,const val&to){
 		if(from.type==TUNDEF&&to.type==TUNDEF)return s;
 		if(from.type!=TNUM)fatal("should not use '%s'(%s) as substring indice",from.tostr().c_str(),valtypename[from.type]);
 		int a=from.num,b;
@@ -1098,6 +1078,31 @@ namespace utils{
 		string r="";
 		for(int i=a;i<=b;i++)r+=s[i];
 		return r;
+	}
+	inline string fmtprint(const string&f,const vector<val>&v){
+		uint len=f.size();
+		string r="";
+		for(uint i=0;i<len;i++){
+			if(f[i]=='{'){
+				uint idx=0,ok=0;i++;
+				while(i<len&&f[i]!='}'){
+					if(!isdigit(f[i]))fatal("invalid format string '%s': invalid index character '%c'",f.c_str(),f[i]);
+					idx=(idx<<3)+(idx<<1)+(f[i]&15),i++,ok=1;
+				}
+				if(f[i]!='}')fatal("invalid format string '%s': unterminated '{'",f.c_str());
+				if(!ok)fatal("invalid format string '%s': expected an index at position %d",f.c_str(),i);
+				if(idx>=v.size())fatal("invalid format string '%s': unprovided value index %d",f.c_str(),idx);
+				r+=v[idx].tostr();
+			}
+			else if(f[i]=='}')fatal("invalid format string '%s': unmatched '}'",f.c_str());
+			else r+=f[i];
+		}
+		return r;
+	}
+	inline string repeatstr(const string&_,int times){
+		string f=_,ans="";
+		for(;times;times>>=1,f=f+f)if(times&1)ans=ans+f;
+		return ans;
 	}
 }
 inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
@@ -1145,9 +1150,11 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 28:need(1);retv=getlen(arg(0));break;
 		case 29:need(1);chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
 		case 30:need(1);chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
-		case 31:need(1);{chktype(0,TSTR);vector<val> vpr;for(uint i=1;i<args.size();i++)vpr.push_back(arg(i));retv=fmtprint(arg(0).str,vpr);break;}
+		case 31:need(1);{chktype(0,TSTR);vector<val> vpr;for(uint i=1;i<args.size();i++)vpr.push_back(arg(i));retv=args.size();cout<<utils::fmtprint(arg(0).str,vpr)<<endl;break;}
 		case 32:need(1);fatal(arg(0).tostr().c_str(),0);break;
 		case 33:retv=utils::substring(generef(this_obj).str,args.size()>=1?arg(0):val(),args.size()>=2?arg(1):val());break;
+		case 34:{vector<val> vpr;for(uint i=0;i<args.size();i++)vpr.push_back(arg(i));retv=utils::fmtprint(generef(this_obj).str,vpr);break;}
+		case 35:need(1);chktype(0,TNUM);retv=utils::repeatstr(generef(this_obj).str,arg(0).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1215,7 +1222,7 @@ void initvm(){
 	makeobj("Console");
 	method("abort");
 	makeobj("System");
-	builtincls(TSTR,"substring");
+	builtincls(TSTR,"substring"),builtincls(TSTR,"format"),builtincls(TSTR,"repeat");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
