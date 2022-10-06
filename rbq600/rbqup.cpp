@@ -52,6 +52,7 @@ OPCODE RETURN=0XE6;
 OPCODE NEWFRAME=0XE7;
 OPCODE DELFRAME=0XE8;
 OPCODE POP=0XE9;
+OPCODE LOADTHIS=0XEA;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1; 
@@ -154,6 +155,11 @@ void runbytes(const codeset&s){
 			case LOADUNDEFINED:{
 				addall();
 				output("LOADUNDEFINED","","");
+				break;
+			}
+			case LOADTHIS:{
+				addall();
+				output("LOADTHIS","","");
 				break;
 			}
 			case LOADVAR:case LOADVARLOCAL:{
@@ -336,10 +342,15 @@ void see(string arg){
 	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();fcin.close();
 }
 int main(int argc,char **argv){
-	if(argc<=1)exit(puts("Usage: rbqup <file1> <file2>...")&&1);
-	initvm();
-	int v=1;for(;v<argc;v++){
-		printf("\n--- File '%s' ---",argv[v]);
-		usedfuncs=1024,see(argv[v]);
-	} 
+	try{	
+		if(argc<=1)exit(puts("Usage: rbqup <file1> <file2>...")&&1);
+		initvm();
+		int v=1;for(;v<argc;v++){
+			printf("\n--- File '%s' ---",argv[v]);
+			usedfuncs=1024,see(argv[v]);
+		} 
+	}
+	catch(string&s){
+		cout<<s<<endl;
+	}
 }
