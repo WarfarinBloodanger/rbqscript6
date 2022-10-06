@@ -62,6 +62,7 @@ OPCODE RETURN=0XE6;
 OPCODE NEWFRAME=0XE7;
 OPCODE DELFRAME=0XE8;
 OPCODE POP=0XE9;
+OPCODE LOADTHIS=0XEA;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1; 
@@ -78,7 +79,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS
 };
 const char* tokenname[]={
 	"number","string","identifier","hexnumber",
@@ -86,7 +87,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'local'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'"
+	"'true'","'false'","'null'","'undefined'","'include'","'this'"
 };
 inline int prior(char tok){
 	switch(tok){
@@ -128,6 +129,7 @@ char getidtype(const string&s){
 	if(s=="null")return TOK_NULL;
 	if(s=="undefined")return TOK_UNDEFINED;
 	if(s=="include")return TOK_INCLUDE;
+	if(s=="this")return TOK_THIS;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -345,6 +347,7 @@ codeset parse_expr(int precd){
 		chklit(TOK_FALSE,"false",LOADFALSE);
 		chklit(TOK_NULL,"null",LOADNULL);
 		chklit(TOK_UNDEFINED,"undefined",LOADUNDEFINED);
+		chklit(TOK_THIS,"this",LOADTHIS);
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
@@ -786,11 +789,17 @@ inline void freereg(const uint&addr){for(ull i=frames.size()-1;~i;i--)if(frames[
 inline ull allocarr(){return arrlength*(++usedarrs);}
 inline ull getlen(val v){ull addr;if(v.type==TSTR)return v.str.length();if(v.type==TREF)return addr=v.num,arrlens[(addr)/arrlength]+1;return 0;}
 inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
+umap<char,umap<string,ull>> builtinmethod;
+inline int builtin_method(char type,const string&s,ull&r){
+	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
+	return 0;
+}
 inline ull getaddr(const val&addr,const val&offset){
 	ull r=0;
 	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val((addr.str.size()>offset.num?((string)"")+addr.str[int(offset.num)]:""));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
 	else if(addr.type==TREF&&offset.type==TSTR)return(-(addr.num+getkeyhash(offset.str)));
+	else if(offset.type==TSTR)if(builtin_method(addr.type,offset.str,r))return r;
 	else fatal("operation '[]' can't be applied between '%s' and '%s'",valtypename[addr.type],valtypename[offset.type]);
 	return r;
 }
@@ -799,10 +808,11 @@ inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&u
 	for(auto a:upvs)upvalueframe[usedfuncs][a]=generef(a);
 	return usedfuncs;
 }
-int call_func(const int&fid,const vector<int>&args,runstack stk_start);
-int runbytes(const codeset&s,runstack stk_start){
+int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
+int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	uint ip=0,len=s.size();
 	runstack curstk,bottom;bottom=stk_start,curstk=stk_start;
+	ull cur_this_obj=0;
 	while(ip<len){
 		switch(s[ip]){
 			default:{
@@ -940,6 +950,7 @@ int runbytes(const codeset&s,runstack stk_start){
 			}
 			case GETADDR:{
 				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
+				cur_this_obj=*(curstk-2);
 				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				break;
@@ -967,7 +978,7 @@ int runbytes(const codeset&s,runstack stk_start){
 				ip++;
 				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
-				vector<int> args,freelist;
+				vector<ull> args,freelist;
 				while(argscnt--){
 					args.push_back(*(curstk-1));
 					if(*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
@@ -978,7 +989,7 @@ int runbytes(const codeset&s,runstack stk_start){
 				ull fid=generef(*(curstk-1)).num;
 				if(*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 				curstk--;
-				ull nr=call_func(fid,args,curstk);*curstk=nr,curstk++;
+				ull nr=call_func(fid,args,curstk,cur_this_obj);*curstk=nr,curstk++;
 				for(auto a:freelist)freereg(a);
 				break;
 			}
@@ -1007,6 +1018,11 @@ int runbytes(const codeset&s,runstack stk_start){
 				ip++;
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip-=1+offset;
+				break;
+			}
+			case LOADTHIS:{
+				if(this_obj==0)fatal("'this' should not appear in non-objective-functions",0);
+				*curstk=this_obj,curstk++;
 				break;
 			}
 			case NEWFRAME:newframe();break;
@@ -1070,64 +1086,82 @@ namespace file_manager{
 	inline string read_getchar(){char c=getchar();return (string)""+c;}
 	inline bool read_eof(){return cin.eof();}
 };
-inline int call_builtin(const int&fid,const vector<int>&args){
+namespace utils{
+	string substring(const string&s,const val&from,const val&to){
+		if(from.type==TUNDEF&&to.type==TUNDEF)return s;
+		if(from.type!=TNUM)fatal("should not use '%s'(%s) as substring indice",from.tostr().c_str(),valtypename[from.type]);
+		int a=from.num,b;
+		if(to.type==TUNDEF)b=s.size()-1;
+		else if(to.type==TNUM)b=to.num;
+		else fatal("should not use '%s'(%s) as substring indice",to.tostr().c_str(),valtypename[to.type]);
+		a=a<0?0:a,b=b<0?0:b,b=b>=s.size()?s.size()-1:b;
+		string r="";
+		for(int i=a;i<=b;i++)r+=s[i];
+		return r;
+	}
+}
+inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 	#define param(x) (args[args.size()-1-(x)])
+	#define need(x)\
+	do{if(args.size()<x)fatal("missing argument %d when calling %d",x,fid);}while(0)
 	val retv;
 	#define arg(x) (generef(param(x)))
 	#define valtype(x) (arg(x).type)
 	#define chktype(x,t)\
-	do{if(valtype(x)!=t)fatal("argument %d requires '%s' for %d, got '%s'\n",x,valtypename[t],fid,valtypename[valtype(x)]);}while(0)
+	do{if(valtype(x)!=t)fatal("argument %d requires '%s' for %d, got '%s'",x,valtypename[t],fid,valtypename[valtype(x)]);}while(0)
 	switch(fid){
 		case 1:for(uint i=0;i<args.size();i++)cout<<arg(i).tostr()<<' ';cout<<endl;retv=args.size();break;
-		case 2:chktype(0,TNUM);retv=arg(0);exit(arg(0).num);break;
+		case 2:need(1);chktype(0,TNUM);retv=arg(0);exit(arg(0).num);break;
 		case 3:retv=file_manager::read_number();break;
 		case 4:retv=file_manager::read_string();break;
 		case 5:retv=file_manager::read_line();break;
 		case 6:retv=file_manager::read_getchar();break;
 		case 7:retv=file_manager::read_eof();break;
-		case 8:chktype(0,TNUM);retv=sin(arg(0).num);break;
-		case 9:chktype(0,TNUM);retv=cos(arg(0).num);break;
-		case 10:chktype(0,TNUM);retv=tan(arg(0).num);break;
-		case 11:chktype(0,TNUM);retv=asin(arg(0).num);break;
-		case 12:chktype(0,TNUM);retv=acos(arg(0).num);break;
-		case 13:chktype(0,TNUM);retv=atan(arg(0).num);break;
-		case 14:chktype(0,TNUM);chktype(1,TNUM);retv=atan2(arg(0).num,arg(1).num);break;
-		case 15:chktype(0,TNUM);retv=exp(arg(0).num);break;
-		case 16:chktype(0,TNUM);retv=log(arg(0).num);break;
+		case 8:need(1);chktype(0,TNUM);retv=sin(arg(0).num);break;
+		case 9:need(1);chktype(0,TNUM);retv=cos(arg(0).num);break;
+		case 10:need(1);chktype(0,TNUM);retv=tan(arg(0).num);break;
+		case 11:need(1);chktype(0,TNUM);retv=asin(arg(0).num);break;
+		case 12:need(1);chktype(0,TNUM);retv=acos(arg(0).num);break;
+		case 13:need(1);chktype(0,TNUM);retv=atan(arg(0).num);break;
+		case 14:need(2);chktype(0,TNUM);chktype(1,TNUM);retv=atan2(arg(0).num,arg(1).num);break;
+		case 15:need(1);chktype(0,TNUM);retv=exp(arg(0).num);break;
+		case 16:need(1);chktype(0,TNUM);retv=log(arg(0).num);break;
 		case 17:{
-			chktype(0,TSTR);
+			need(1);chktype(0,TSTR);
 			if(args.size()==1)retv=file_manager::file_open(arg(0).str);
 			else{chktype(1,TSTR);retv=file_manager::file_open(arg(0).str,arg(1).str);}
 			break;
 		}
-		case 18:chktype(0,TNUM);retv=file_manager::fread_number(arg(0).num);break;
-		case 19:chktype(0,TNUM);retv=file_manager::fread_string(arg(0).num);break;
-		case 20:chktype(0,TNUM);retv=file_manager::fread_line(arg(0).num);break;
-		case 21:chktype(0,TNUM);for(uint i=1;i<args.size();i++)file_manager::fwrite_string(arg(0).num,arg(i).tostr());retv=args.size();break;
-		case 22:chktype(0,TNUM);retv=file_manager::file_close(arg(0).num);break;
-		case 23:chktype(0,TNUM);retv=file_manager::file_eof(arg(0).num);break;
+		case 18:need(1);chktype(0,TNUM);retv=file_manager::fread_number(arg(0).num);break;
+		case 19:need(1);chktype(0,TNUM);retv=file_manager::fread_string(arg(0).num);break;
+		case 20:need(1);chktype(0,TNUM);retv=file_manager::fread_line(arg(0).num);break;
+		case 21:need(1);chktype(0,TNUM);for(uint i=1;i<args.size();i++)file_manager::fwrite_string(arg(0).num,arg(i).tostr());retv=args.size();break;
+		case 22:need(1);chktype(0,TNUM);retv=file_manager::file_close(arg(0).num);break;
+		case 23:need(1);chktype(0,TNUM);retv=file_manager::file_eof(arg(0).num);break;
 		case 24:retv=clock();break;
-		case 25:chktype(0,TSTR);retv=system(arg(0).str.c_str());break;
+		case 25:need(1);chktype(0,TSTR);retv=system(arg(0).str.c_str());break;
 		case 26:retv=rand();break;
-		case 27:chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
-		case 28:retv=getlen(arg(0));break;
-		case 29:chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
-		case 30:chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
-		case 31:{chktype(0,TSTR);vector<val> vpr;for(uint i=1;i<args.size();i++)vpr.push_back(arg(i));retv=fmtprint(arg(0).str,vpr);break;}
-		default:exit(printf("Unknown builtin function id %d\n",fid)&&0);retv=0;break;
+		case 27:need(1);chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
+		case 28:need(1);retv=getlen(arg(0));break;
+		case 29:need(1);chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
+		case 30:need(1);chktype(0,TNUM);retv=(string)""+char(arg(0).num);break;
+		case 31:need(1);{chktype(0,TSTR);vector<val> vpr;for(uint i=1;i<args.size();i++)vpr.push_back(arg(i));retv=fmtprint(arg(0).str,vpr);break;}
+		case 32:need(1);fatal(arg(0).tostr().c_str(),0);break;
+		case 33:retv=utils::substring(generef(this_obj).str,args.size()>=1?arg(0):val(),args.size()>=2?arg(1):val());break;
+		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
 	return nr;
 }
-inline int call_func(const int&fid,const vector<int>&args,runstack stk_start){
-	if(builtin.find(fid)!=builtin.end())return call_builtin(fid,args);
+inline int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj){
+	if(builtin.find(fid)!=builtin.end())return call_builtin(fid,args,this_obj);
 	const vector<int> &pid=functable[fid].pid;
 	if(functable[fid].pid.size()<args.size())fatal("function at %d needs at most %d argument(s), %d given",fid,functable[fid].pid.size(),args.size());
 	vector<val>ag;ag.resize(args.size());
 	for(int i=0;i<args.size();i++)ag[i]=generef(args[args.size()-1-i]);
 	uint oldsize=frames.size();newframe();funcstack.push_back(fid);
 	for(int i=0;i<ag.size();i++)generef(pid[i],1)=ag[i];
-	int ret=runbytes(functable[fid].instr,stk_start);
+	int ret=runbytes(functable[fid].instr,stk_start,this_obj);
 	val v=generef(ret);
 	while(oldsize<frames.size())delframe();funcstack.pop_back();
 	int nr=newreg();
@@ -1160,6 +1194,7 @@ void initvm(){
 		vt.clear(),vr.clear();\
 	})
 	#define func(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC))
+	#define builtincls(type,name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC),builtinmethod[type][name]=getid(name))
 	#define method(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),vt.push_back(val(r,TFUNC)),vr.push_back(val((string)name)))
 	method("print"),method("exit"),method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
 	makeobj("Console");
@@ -1178,9 +1213,16 @@ void initvm(){
 	generef(getid("license"))=val(LICENSE);
 	method("printf");
 	makeobj("Console");
+	method("abort");
+	makeobj("System");
+	builtincls(TSTR,"substring");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
+	#undef func
+	#undef method
+	#undef makeobj
+	#undef builtincls
 }
 }
 
