@@ -28,7 +28,7 @@
 | `Console.read_line` | `()` | `string`| 读入一个字符串，以换行符为结束标志  |
 | `Console.getchar` | `()` |  `string`|读入单个字符  |
 | `Console.eof` | `()` |  `true/false`|检查读入是否已经结束  |
-| `Console.printf` | `(format=string,...)` | `string` | 以 format 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数  |
+| `Console.printf` | `(format=string,...)` | `string` | 以 format 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数，并输出  |
 | `Math.sin` | `(x=number)` |  `number`| 返回 sin(x)  |
 | `Math.cos` | `(x=number)` |  `number`| 返回 cos(x)  |
 | `Math.tan` | `(x=number)` |  `number`| 返回 tan(x)  |
@@ -54,3 +54,14 @@
 | `char` | `(c=number)` | `string`| 返回 c 对应的 ascii 字符  |
 
 - 【1】 使用同 C 语言相同的打开格式描述符。即 `r/w/a/r+/w+/a+/rb/wb/ab/rb+/wb+/ab+`。
+
+### 内置类型方法列表
+
+| 类.方法 | 签名 |返回值类型 | 说明 |
+| :----------: | :----------: | :----------: | :----------: |
+| `String.substring` | `([from=number],[to=number])` | `string`| 返回 this 在 from 到 to 之间的子串（闭区间）。若 from 和 to 不在字符串下标范围内，将会修正为 0 或 this 的最后一个下标。 |
+| `String.format` | `(...)` | `string`| 返回将 this 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数的结果 ||
+| `String.repeat` | `(times=number)` | `string`| 返回将 this 重复 times 次的结果 |
+| `String.replace` | `(target=string,repl=string)` | `string`| 返回 this 中第一个 target 子串替换为 repl 后的结果 |
+| `String.split` | `(target=string)` | `Array`| 返回将 this 用 target 作为分隔符后分隔出的所有元素组成的列表 |
+| `String.index` | `(target=string,[from=number])` | `number`| 返回 this 中从 from（默认为 0）开始的第一个 target 子串的起始下标。如果找不到返回 -1 |
