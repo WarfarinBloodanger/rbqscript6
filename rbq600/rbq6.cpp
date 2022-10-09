@@ -140,7 +140,7 @@ void tokenize(char *src){
 	while(loc<len){
 		token cur;cur.line=line,cur.column=column;
 		if(isalpha(src[loc])||src[loc]=='_'){
-			while(loc<len&&isalpha(src[loc])||isdigit(src[loc])||src[loc]=='_')cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+			while((loc<len)&&(isalpha(src[loc])||isdigit(src[loc])||src[loc]=='_'))cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 			cur.type=getidtype(cur.val),toks.push_back(cur); 
 		}
 		else if(isdigit(src[loc])||src[loc]=='.'){
@@ -148,14 +148,14 @@ void tokenize(char *src){
 			if(src[loc]=='0'&&loc+1<len&&(src[loc+1]=='x'||src[loc+1]=='X')){
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
-				while(loc<len&&isdigit(src[loc])||(src[loc]>='a'&&src[loc]<='f')||(src[loc]>='A'&&src[loc]<='F'))cur.val.push_back(tolower(src[loc])),(chkln,loc++,loc-1);
+				while((loc<len&&isdigit(src[loc]))||(src[loc]>='a'&&src[loc]<='f')||(src[loc]>='A'&&src[loc]<='F'))cur.val.push_back(tolower(src[loc])),(chkln,loc++,loc-1);
 				cur.type=TOK_HEX,toks.push_back(cur);
 			}
 			else{
-				while(loc<len&&isdigit(src[loc])||src[loc]=='.'||src[loc]=='E'||src[loc]=='e'||src[loc]=='-'){
-					if(src[loc]=='.')if(!d)d=1;else break;
-					if(src[loc]=='e'||src[loc]=='E')if(n&&!e)e=1;else break;
-					if(src[loc]=='-')if(loc-1>=0&&(src[loc-1]=='e'||src[loc-1]=='E'));else break;
+				while((loc<len&&isdigit(src[loc]))||src[loc]=='.'||src[loc]=='E'||src[loc]=='e'||src[loc]=='-'){
+					if(src[loc]=='.'){if(!d)d=1;else break;}
+					if(src[loc]=='e'||src[loc]=='E'){if(n&&!e)e=1;else break;}
+					if(src[loc]=='-'){if(loc-1>=0&&(src[loc-1]=='e'||src[loc-1]=='E'));else break;}
 					if(isdigit(src[loc]))n=1;
 					cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				}
@@ -243,11 +243,11 @@ void tokenize(char *src){
 uint curtok;
 #define tok toks[curtok]
 inline void nexttok(){
-	if(curtok==toks.size())fatal("expected token at the end of file",0);
+	if(curtok==toks.size())fatal("expected token at the end of file%c",' ');
 	curtok++;
 }
 token readtok(char type){
-	if(curtok>toks.size()||toks[curtok].type!=type)fatal("expected token %s at line %d, column %d",tokenname[type],toks[curtok].line,toks[curtok].column);
+	if(curtok>toks.size()||toks[curtok].type!=type)fatal("expected token %s at line %d, column %d",tokenname[(uint)type],toks[curtok].line,toks[curtok].column);
 	return toks[curtok++];
 }
 umap<uint,string,hasher>names;
@@ -271,7 +271,12 @@ struct bitparse{
 		ull n;
 	};
 };
-bitparse bpser; 
+bitparse bpser;
+long long hex2dec(const string&s){
+	long long x=0;
+	for(uint i=2;i<s.size();i++)x=(x<<4)^(isdigit(s[i])?s[i]&15:10+(toupper(s[i])-'A'));
+	return x;
+}
 double str2num(const string&s){
 	double v;stringstream ss("");ss<<s;ss>>v;return v;
 }
@@ -295,6 +300,15 @@ inline codeset loadshort(int v){
 inline codeset loadint(int v){
 	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
 }
+long long hex2dec(const string&s);
+string encd(int v){
+	string s="";
+	if(v<=0x7f)s+=(char)(v&0x7f);
+	else if(v<=0x7ff)s+=(char)(0xc0|((v&0x7c0)>>6)),s+=char((0x80|(v&0x3f)));
+	else if(v<=0xffff)s+=char(0xe0|((v&0xf000)>>12)),s+=char(0x80|((v&0xfc0)>>6)),s+=char(0x80|(v&0x3f));
+	else if(v<=0x10ffff)s+=char(0xf0|((v&0x1c0000)>>18)),s+=char(0x80|((v&0x3f00)>>12)),s+=char(0x80|((v&0xfc0)>>6)),s+=char(0x80|(v&0x3f));
+	return s;
+}
 codeset compile_str(const string&x){
 	codeset s,b;
 	uint len=x.size()-1,c=0;
@@ -313,7 +327,15 @@ codeset compile_str(const string&x){
 				case '\'':gen('\'');break;
 				case '\"':gen('\"');break;
 				case '0':gen('\0');break;
-				default:fatal("unknown escaped char '\\%c'",x[i+1]);
+				case 'u':{
+					i+=2;
+					if(i+3>=len)fatal("uncompleted unicode escape sequence in string '%s'",x.c_str());
+					string e=encd(hex2dec((string)"0x"+x[i]+x[i+1]+x[i+2]+x[i+3]));
+					for(auto v:e){gen(v);}
+					i+=2,c+=e.size()-1; 
+					break;
+				}
+				default:fatal("unknown escaped char '\\%c' in string '%s'",x[i+1],x.c_str());
 			}
 			i++,c++;
 		}
@@ -359,6 +381,7 @@ codeset parse_expr(int precd){
 			break;
 		}
 		case TOK_NUM:concat(s,compile_num(str2num(tok.val)));readtok(TOK_NUM);break;
+		case TOK_HEX:concat(s,compile_num(hex2dec(tok.val)));readtok(TOK_HEX);break;
 		case TOK_STR:concat(s,compile_str(tok.val));readtok(TOK_STR);break;
 		case TOK_LPR:readtok(TOK_LPR);concat(s,parse_expr(0));readtok(TOK_RPR);break;
 		case TOK_LBK:readtok(TOK_LBK);concat(s,parse_args(TOK_RBK,tmp));readtok(TOK_RBK);
@@ -452,8 +475,7 @@ codeset parse_args(char end,uint &c){
 codeset parse_params(uint &c){
 	codeset s;c=0;
 	while(tok.type!=TOK_RPR){
-		bool isref=0;
-		if(tok.type==TOK_AND)readtok(TOK_AND),isref=1;
+		if(tok.type==TOK_AND)readtok(TOK_AND);
 		concat(s,loadint(getid(readtok(TOK_ID).val,1)));
 		c++;
 		if(tok.type==TOK_COM)readtok(TOK_COM); 
@@ -481,7 +503,7 @@ codeset parse_obj(){
 			b1=compile_str('"'+tok.val+'"');
 		}
 		else if(tok.type==TOK_STR)b1=compile_str(tok.val);
-		else fatal("expected a property name at line %d, column %d (given: '%s')",tok.line,tok.column,tokenname[tok.type]);
+		else fatal("expected a property name at line %d, column %d (given: '%s')",tok.line,tok.column,tokenname[(uint)tok.type]);
 		nexttok(),readtok(TOK_COL);
 		b2=parse_expr(0);
 		if(tok.type==TOK_COM)readtok(TOK_COM);
@@ -521,7 +543,7 @@ codeset compile(){
 }
 void fillholder(codeset&s,const uint&led){
 	codeset b;
-	for(int i=0;i+8<s.size();i++){
+	for(uint i=0;i+8<s.size();i++){
 		if(
 			s[i]==BREAKHOLDER&&s[i+1]==BREAKHOLDER&&s[i+2]==BREAKHOLDER&&
 			s[i+3]==BREAKHOLDER&&s[i+4]==BREAKHOLDER&&s[i+5]==BREAKHOLDER&&
@@ -672,7 +694,7 @@ struct val{
 	math_method(/)
 	val operator%(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return fmod(num,b.num);
-		fatal("operation '%' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
+		fatal("operation '%%' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
 	#undef math_method
@@ -760,12 +782,15 @@ const uint arrlength=1024*1024*1024;
 const uint objresv=arrlength/2;
 vector<hashtable<ull,val,hasher>>frames;
 umap<string,ull>keyhash;
+umap<ull,string>revkeyhash;
 ull usedhashslot;
-ull getkeyhash(const string&s){if(keyhash.find(s)==keyhash.end())return keyhash[s]=(++usedhashslot)+objresv;return keyhash[s];}
+ull getkeyhash(const string&s){if(keyhash.find(s)==keyhash.end())return keyhash[s]=(++usedhashslot)+objresv,revkeyhash[keyhash[s]]=s,keyhash[s];return keyhash[s];}
+val indexval(ull x){return x>objresv?revkeyhash[x%objresv]:val(x,TNUM);}
 umap<ull,umap<ull,val,hasher>,hasher>upvalueframe;
 umap<ull,func,hasher>functable;
 umap<ull,val,hasher>heap;
 umap<ull,ull,hasher>arrlens;
+umap<ull,set<ull>,hasher>indices;
 vector<uint>regs;
 vector<uint>funcstack; 
 ull usedarrs;
@@ -788,7 +813,8 @@ inline void delreg(){regs[regs.size()-1]--;}
 inline void freereg(const uint&addr){for(ull i=frames.size()-1;~i;i--)if(frames[i].has(addr))frames[i].ctt.erase(addr);}
 inline ull allocarr(){return arrlength*(++usedarrs);}
 inline ull getlen(val v){ull addr;if(v.type==TSTR)return v.str.length();if(v.type==TREF)return addr=v.num,arrlens[(addr)/arrlength]+1;return 0;}
-inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
+inline ull getarrid(ull x){return x/arrlength;}
+inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;indices[addr/arrlength].insert(addr%arrlength),arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
 umap<char,umap<string,ull>> builtinmethod;
 inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
@@ -798,8 +824,11 @@ inline ull getaddr(const val&addr,const val&offset){
 	ull r=0;
 	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val((addr.str.size()>offset.num?((string)"")+addr.str[int(offset.num)]:""));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
-	else if(addr.type==TREF&&offset.type==TSTR)return(-(addr.num+getkeyhash(offset.str)));
-	else if(offset.type==TSTR)if(builtin_method(addr.type,offset.str,r))return r;
+	else if(addr.type==TREF&&offset.type==TSTR){
+		if(builtin_method(addr.type,offset.str,r))return r;
+		return(-(addr.num+getkeyhash(offset.str)));
+	}
+	else if(offset.type==TSTR){if(builtin_method(addr.type,offset.str,r))return r;}
 	else fatal("operation '[]' can't be applied between '%s' and '%s'",valtypename[addr.type],valtypename[offset.type]);
 	return r;
 }
@@ -811,8 +840,8 @@ inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&u
 int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
 int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	uint ip=0,len=s.size();
-	runstack curstk,bottom;bottom=stk_start,curstk=stk_start;
-	ull cur_this_obj=0;
+	runstack curstk=stk_start;
+	stack<ull>cur_this_obj;
 	while(ip<len){
 		switch(s[ip]){
 			default:{
@@ -825,7 +854,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				uchar v=0;
-				while(id--)v=s[++ip]*0xfu+s[++ip],str.push_back(v);
+				while(id--)v=s[ip+1]*0xfu+s[ip+2],ip+=2,str.push_back(v);
 				*curstk=newreg();
 				generef(*curstk)=val(str),curstk++;
 				break;
@@ -855,7 +884,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case ASSIGN:case ASSIGNLOCAL:{
 				generef(*(curstk-2),s[ip]==ASSIGNLOCAL)=generef(*(curstk-1)),mdfaddr(*(curstk-2));
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--;
 				break;
 			}
@@ -875,7 +904,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				break;
 			}
 			case POP:{
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--;break;
 				break;
 			}
@@ -883,7 +912,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			case v:{\
 				uint nr=newreg();\
 				generef(nr)=generef(*(curstk-2)) sym generef(*(curstk-1));\
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
 				curstk--,*(curstk-1)=nr;\
 				break;\
 			}
@@ -910,7 +939,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			case v:{\
 				uint nr=newreg();\
 				generef(nr)=sym generef(*(curstk-1));\
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
 				*(curstk-1)=nr;\
 				break;\
 			}
@@ -925,7 +954,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				ull loc=allocarr(),nr=newreg();
 				while(len--){
 					generef(-(loc+len))=generef(*(curstk-1)),mdfaddr(-(loc+len));
-					if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 				}
 				generef(nr)=val(loc,TREF),*curstk=nr,curstk++;
@@ -939,10 +968,10 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				val r=val(loc,TREF),key; 
 				while(len--){
 					key=generef(*(curstk-1));
-					if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 					generef(getaddr(r,key))=generef(*(curstk-1)),mdfaddr(getaddr(r,key));
-					if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 				}
 				generef(nr)=r,*curstk=nr,curstk++;
@@ -950,8 +979,8 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case GETADDR:{
 				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
-				cur_this_obj=*(curstk-2);
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				cur_this_obj.push(*(curstk-2));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				break;
 			}
@@ -981,15 +1010,15 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				vector<ull> args,freelist;
 				while(argscnt--){
 					args.push_back(*(curstk-1));
-					if(*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 					curstk--;
 				}
 				if(generef(*(curstk-1)).type!=TFUNC)fatal("can't call a non-function type '%s'(%s)",valtypename[generef(*(curstk-1)).type],generef(*(curstk-1)).tostr().c_str());
 				
 				ull fid=generef(*(curstk-1)).num;
-				if(*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 				curstk--;
-				ull nr=call_func(fid,args,curstk,cur_this_obj);*curstk=nr,curstk++;
+				ull nr=call_func(fid,args,curstk,cur_this_obj.size()?cur_this_obj.top():0);cur_this_obj.size()?cur_this_obj.pop():void();*curstk=nr,curstk++;
 				for(auto a:freelist)freereg(a);
 				break;
 			}
@@ -1009,7 +1038,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
-				if(*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--;
 				if(!cond)ip+=offset;
 				break;
@@ -1021,7 +1050,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				break;
 			}
 			case LOADTHIS:{
-				if(this_obj==0)fatal("'this' should not appear in non-objective-functions",0);
+				if(this_obj==0)fatal("'this' should not appear in non-objective-functions%c",' ');
 				*curstk=this_obj,curstk++;
 				break;
 			}
@@ -1030,6 +1059,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 		}
 		ip++;
 	}
+	return 0;
 }
 set<ull> builtin;
 namespace file_manager{
@@ -1074,10 +1104,34 @@ namespace utils{
 		if(to.type==TUNDEF)b=s.size()-1;
 		else if(to.type==TNUM)b=to.num;
 		else fatal("should not use '%s'(%s) as substring indice",to.tostr().c_str(),valtypename[to.type]);
-		a=a<0?0:a,b=b<0?0:b,b=b>=s.size()?s.size()-1:b;
+		a=a<0?0:a,b=b<0?0:b,b=(unsigned int64_t)b>=s.size()?s.size()-1:b;
 		string r="";
 		for(int i=a;i<=b;i++)r+=s[i];
 		return r;
+	}
+	inline string substr(const string&s,int from,int len){
+		from=from<0?0:from,from=(unsigned int64_t)from>=s.size()?s.size()-1:from;
+		len=len<0?0:len,len=(unsigned int64_t)len>(s.size()-from)?(s.size()-from):len;
+		return s.substr(from,len);
+	}
+	inline string changecase(const string&s,int lower=0){
+		string r="";
+		for(auto a:s)r+=char(lower?tolower(a):toupper(a));
+		return r;
+	}
+	inline int startswith(const string&s,const string&pre){
+		if(pre.size()>s.size())return 0;
+		else return s.substr(0,pre.size())==pre;
+	}
+	inline int endswith(const string&s,const string&suf){
+		if(suf.size()>s.size())return 0;
+		else return s.substr(s.size()-suf.size(),suf.size())==suf;
+	}
+	inline string trim(const string&s){
+		int x=0,y=s.size()-1;
+		while(isspace(s[x])&&x<=y)x++;
+		while(isspace(s[y])&&x<=y)y--;
+		return s.substr(x,y-x+1);
 	}
 	inline string fmtprint(const string&f,const vector<val>&v){
 		uint len=f.size();
@@ -1103,6 +1157,42 @@ namespace utils{
 		string f=_,ans="";
 		for(;times;times>>=1,f=f+f)if(times&1)ans=ans+f;
 		return ans;
+	}
+	// Its not a good idea to use KMP so I dont
+	inline string replacestr(const string&_,const string&rpl,const string&use){
+		string f=_;
+		uint x=f.find(rpl);
+		if(x==string::npos)return f;
+		return f.replace(x,rpl.size(),use);
+	}
+	inline val splitstr(const string&_,const string&rpl){
+		size_t x=_.find(rpl),lst=0;
+		vector<string> ret;
+		while(x!=string::npos){
+			if(x>lst)ret.push_back(_.substr(lst,x-lst));
+			lst=x+1,x=_.find(rpl,lst); 
+		}
+		if(lst!=_.size())ret.push_back(_.substr(lst));
+		ull loc=allocarr();
+		for(uint i=0;i<ret.size();i++)generef(-(loc+i))=val(ret[i]),mdfaddr(-(loc+i));
+		return val(loc,TREF);
+	}
+	inline int indexof(const string&_,const string&rpl,const val&from){
+		int start=0;
+		if(from.type==TUNDEF)start=0;
+		else if(from.type==TNUM)start=from.num;
+		else fatal("should not use '%s'(%s) as indexing indice",from.tostr().c_str(),valtypename[from.type]);
+		start=start<0?0:start,start=(unsigned int64_t)start>=_.size()?_.size()-1:start; 
+		uint x=_.find(rpl,start);
+		if(x==string::npos)return -1;
+		return x;
+	}
+	inline val arrindices(ull ref){
+		ull id=getarrid(ref);
+		uint i=0;
+		ull loc=allocarr();
+		for(auto a:indices[id])generef(-(loc+i))=indexval(a),mdfaddr(-(loc+i)),i++;
+		return val(loc,TREF);
 	}
 }
 inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
@@ -1155,6 +1245,15 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 33:retv=utils::substring(generef(this_obj).str,args.size()>=1?arg(0):val(),args.size()>=2?arg(1):val());break;
 		case 34:{vector<val> vpr;for(uint i=0;i<args.size();i++)vpr.push_back(arg(i));retv=utils::fmtprint(generef(this_obj).str,vpr);break;}
 		case 35:need(1);chktype(0,TNUM);retv=utils::repeatstr(generef(this_obj).str,arg(0).num);break;
+		case 36:need(2);chktype(0,TSTR);chktype(1,TSTR);retv=utils::replacestr(generef(this_obj).str,arg(0).str,arg(1).str);break;
+		case 37:need(1);chktype(0,TSTR);retv=utils::splitstr(generef(this_obj).str,arg(0).str);break;
+		case 38:need(1);chktype(0,TSTR);retv=utils::indexof(generef(this_obj).str,arg(0).str,args.size()>=2?arg(1):val());break;
+		case 39:need(2);chktype(0,TNUM);chktype(1,TNUM);retv=utils::substr(generef(this_obj).str,arg(0).num,arg(1).num);break;
+		case 40:case 41:retv=utils::changecase(generef(this_obj).str,fid&1);break;
+		case 42:need(1);chktype(0,TSTR);retv=utils::startswith(generef(this_obj).str,arg(0).str)?val(TTRUE):val(TFALSE);break;
+		case 43:need(1);chktype(0,TSTR);retv=utils::endswith(generef(this_obj).str,arg(0).str)?val(TTRUE):val(TFALSE);;break;
+		case 44:retv=utils::trim(generef(this_obj).str);break;
+		case 45:retv=utils::arrindices(generef(this_obj).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1163,11 +1262,11 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 inline int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj){
 	if(builtin.find(fid)!=builtin.end())return call_builtin(fid,args,this_obj);
 	const vector<int> &pid=functable[fid].pid;
-	if(functable[fid].pid.size()<args.size())fatal("function at %d needs at most %d argument(s), %d given",fid,functable[fid].pid.size(),args.size());
+	if(functable[fid].pid.size()<args.size())fatal("function at %d needs at most %lld argument(s), %lld given",fid,functable[fid].pid.size(),args.size());
 	vector<val>ag;ag.resize(args.size());
-	for(int i=0;i<args.size();i++)ag[i]=generef(args[args.size()-1-i]);
+	for(uint i=0;i<args.size();i++)ag[i]=generef(args[args.size()-1-i]);
 	uint oldsize=frames.size();newframe();funcstack.push_back(fid);
-	for(int i=0;i<ag.size();i++)generef(pid[i],1)=ag[i];
+	for(uint i=0;i<ag.size();i++)generef(pid[i],1)=ag[i];
 	int ret=runbytes(functable[fid].instr,stk_start,this_obj);
 	val v=generef(ret);
 	while(oldsize<frames.size())delframe();funcstack.pop_back();
@@ -1177,13 +1276,13 @@ inline int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull
 bool inited;
 inline val initarr(const string&name,const vector<val>&v){
 	val vr=val(allocarr(),TREF);
-	for(int i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i];
+	for(uint i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i];
 	generef(getid(name))=vr;
 	return vr;
 }
 inline val initarr(const string&name,const vector<val>&v,const vector<val>&id){
 	val vr=val(allocarr(),TREF);
-	for(int i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i];
+	for(uint i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i];
 	generef(getid(name))=vr;
 	return vr;
 }
@@ -1223,6 +1322,10 @@ void initvm(){
 	method("abort");
 	makeobj("System");
 	builtincls(TSTR,"substring"),builtincls(TSTR,"format"),builtincls(TSTR,"repeat");
+	builtincls(TSTR,"replace"),builtincls(TSTR,"split"),builtincls(TSTR,"index");
+	builtincls(TSTR,"substr"),builtincls(TSTR,"to_upper"),builtincls(TSTR,"to_lower");
+	builtincls(TSTR,"starts_with"),builtincls(TSTR,"ends_with"),builtincls(TSTR,"trim");
+	builtincls(TREF,"indice");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
@@ -1302,12 +1405,12 @@ namespace launcher{
 		savecode(files[0],c);
 	}
 	string start_compile(){
-		if(!files.size())fatal("need at least one input source file to compile",0);
+		if(!files.size())fatal("need at least one input source file to compile%c",' ');
 		for(auto a:files)read_source(a);
 		start_compile2();return files[0];
 	}
 	void run_rbq(string arg){
-		if(!arg.size())fatal("need a bytecode file to run",0);
+		if(!arg.size())fatal("need a bytecode file to run%c",' ');
 		new_scope(),vm::initvm();codeset s;
 		ifstream fcin(arg.c_str(),ios::binary);
 		if(!fcin)fatal("can not open bytefile '%s'",arg.c_str()); 
