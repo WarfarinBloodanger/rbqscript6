@@ -59,9 +59,15 @@
 
 | 类.方法 | 签名 |返回值类型 | 说明 |
 | :----------: | :----------: | :----------: | :----------: |
-| `String.substring` | `([from=number],[to=number])` | `string`| 返回 this 在 from 到 to 之间的子串（闭区间）。若 from 和 to 不在字符串下标范围内，将会修正为 0 或 this 的最后一个下标。 |
-| `String.format` | `(...)` | `string`| 返回将 this 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数的结果 ||
-| `String.repeat` | `(times=number)` | `string`| 返回将 this 重复 times 次的结果 |
-| `String.replace` | `(target=string,repl=string)` | `string`| 返回 this 中第一个 target 子串替换为 repl 后的结果 |
-| `String.split` | `(target=string)` | `Array`| 返回将 this 用 target 作为分隔符后分隔出的所有元素组成的列表 |
-| `String.index` | `(target=string,[from=number])` | `number`| 返回 this 中从 from（默认为 0）开始的第一个 target 子串的起始下标。如果找不到返回 -1 |
+| `string.substring` | `([from=number],[to=number])` | `string`| 返回 this 在 from 到 to 之间的子串（闭区间）。若 from 和 to 不在字符串下标范围内，将会修正为 0 或 this 的最后一个下标。 |
+| `string.format` | `(...)` | `string`| 返回将 this 作为格式化字符串，将其中形如 `{<idx>}` 的子串替换为第 idx 个参数的结果 ||
+| `string.repeat` | `(times=number)` | `string`| 返回将 this 重复 times 次的结果 |
+| `string.replace` | `(target=string,repl=string)` | `string`| 返回 this 中第一个 target 子串替换为 repl 后的结果 |
+| `string.split` | `(target=string)` | `Array`| 返回将 this 用 target 作为分隔符后分隔出的所有元素组成的列表 |
+| `string.index` | `(target=string,[from=number])` | `number`| 返回 this 中从 from（默认为 0）开始的第一个 target 子串的起始下标。如果找不到返回 -1 |
+| `string.substr` | `(from=number,length=number)` | `string`| 返回 this 中从 from 开始的长度为 length 的子串。若 from 和 length 不在字符串下标范围内，将会修正|
+| `string.to_upper` | `()` | `string`| 返回将字符串中所有小写字母转为大写后的结果 |
+| `string.to_lower` | `()` | `string`| 返回将字符串中所有大写字母转为小写后的结果 |
+| `string.starts_with` | `(prefix=string)` | `true/false`| 如果 this 以 prefix 开头，返回 true，否则返回 false |
+| `string.ends_with` | `(suffix=string)` | `true/false`| 如果 this 以 suffix 结尾，返回 true，否则返回 false |
+| `string.trim` | `()` | `string`| 返回将字符串开头结尾的空白符去除后的结果 |
