@@ -273,9 +273,31 @@ struct bitparse{
 };
 bitparse bpser;
 long long hex2dec(const string&s){
-	long long x=0;
-	for(uint i=2;i<s.size();i++)x=(x<<4)^(isdigit(s[i])?s[i]&15:10+(toupper(s[i])-'A'));
-	return x;
+	long long x=0,v=0;
+	uint i=0;
+	if(s.size()&&s[0]=='-')v=1;
+	if(s.size()<=(uint)(2+v)||(s[i]!='0'&&toupper(s[i+1]!='X')))fatal("invalid hex number: '%s'",s.c_str());
+	else i+=2;
+	for(;i<s.size();i++){
+		if(!isdigit(s[i])&&(toupper(s[i])<'A'||toupper(s[i])>'F'))fatal("invalid hex number: '%s'",s.c_str());
+		x=(x<<4)^(isdigit(s[i])?s[i]&15:10+(toupper(s[i])-'A'));
+	}
+	return x*(v?-1:1);
+}
+string dec2hex(ull x){
+	string s="";int n=0;
+	if(x==0)return "0x0";
+	if(x<0)n=1,x=-x;
+	while(x){
+		int v=x&15;
+		if(v<10)s+=char(v^'0');
+		else s+=char(v-10+'a');
+		x>>=4;
+	}
+	reverse(s.begin(),s.end());
+	s="0x"+s;
+	if(n)s="-"+s;
+	return s;
 }
 double str2num(const string&s){
 	double v;stringstream ss("");ss<<s;ss>>v;return v;
@@ -301,12 +323,14 @@ inline codeset loadint(int v){
 	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
 }
 long long hex2dec(const string&s);
-string encd(int v){
+string encd(ull v){
 	string s="";
+	if(v<0)fatal("invalid codepoint %lld",v);
 	if(v<=0x7f)s+=(char)(v&0x7f);
 	else if(v<=0x7ff)s+=(char)(0xc0|((v&0x7c0)>>6)),s+=char((0x80|(v&0x3f)));
 	else if(v<=0xffff)s+=char(0xe0|((v&0xf000)>>12)),s+=char(0x80|((v&0xfc0)>>6)),s+=char(0x80|(v&0x3f));
 	else if(v<=0x10ffff)s+=char(0xf0|((v&0x1c0000)>>18)),s+=char(0x80|((v&0x3f00)>>12)),s+=char(0x80|((v&0xfc0)>>6)),s+=char(0x80|(v&0x3f));
+	else fatal("invalid codepoint %lld",v);
 	return s;
 }
 codeset compile_str(const string&x){
@@ -651,7 +675,7 @@ namespace vm{
 const uint MAX_FILE_CNT=1024*4;
 const uint RUNSTACK_SIZE=1024*1024;
 typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
-const char* valtypename[]={"number","string","null","function","Array","true","false","undefined"};
+const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
 struct val{
 	double num;
 	string str;
@@ -757,6 +781,15 @@ struct val{
 	logic_method(||)
 	val operator!()const{return !is_true()?maketrue():makefalse();}
 	#undef logic_method
+	val smller(const val&v)const{
+		if(v.type!=type)return false;
+		switch(type){
+			case TNUM:return num<v.num?maketrue():makefalse();
+			case TSTR:return str<v.str?maketrue():makefalse();
+			default:return type<v.type?maketrue():makefalse();
+		}
+		return makefalse();
+	}
 };
 template <typename T>
 struct pool{
@@ -784,13 +817,21 @@ vector<hashtable<ull,val,hasher>>frames;
 umap<string,ull>keyhash;
 umap<ull,string>revkeyhash;
 ull usedhashslot;
-ull getkeyhash(const string&s){if(keyhash.find(s)==keyhash.end())return keyhash[s]=(++usedhashslot)+objresv,revkeyhash[keyhash[s]]=s,keyhash[s];return keyhash[s];}
+ull getkeyhash(const string&s){
+	if(keyhash.find(s)==keyhash.end()){
+		keyhash[s]=(++usedhashslot)+objresv;
+		revkeyhash[keyhash[s]-objresv]=s;
+		return keyhash[s];
+	}
+	return keyhash[s];
+}
 val indexval(ull x){return x>objresv?revkeyhash[x%objresv]:val(x,TNUM);}
 umap<ull,umap<ull,val,hasher>,hasher>upvalueframe;
 umap<ull,func,hasher>functable;
 umap<ull,val,hasher>heap;
 umap<ull,ull,hasher>arrlens;
-umap<ull,set<ull>,hasher>indices;
+umap<ull,set<ull>>indices;
+umap<ull,int>is_obj;
 vector<uint>regs;
 vector<uint>funcstack; 
 ull usedarrs;
@@ -812,9 +853,24 @@ inline ull newreg(){return regs.size()*regoffset+(++regs[regs.size()-1]);}
 inline void delreg(){regs[regs.size()-1]--;}
 inline void freereg(const uint&addr){for(ull i=frames.size()-1;~i;i--)if(frames[i].has(addr))frames[i].ctt.erase(addr);}
 inline ull allocarr(){return arrlength*(++usedarrs);}
-inline ull getlen(val v){ull addr;if(v.type==TSTR)return v.str.length();if(v.type==TREF)return addr=v.num,arrlens[(addr)/arrlength]+1;return 0;}
 inline ull getarrid(ull x){return x/arrlength;}
-inline void mdfaddr(ull addr){if(addr>=0)return;addr=-addr;indices[addr/arrlength].insert(addr%arrlength),arrlens[addr/arrlength]=max(arrlens[addr/arrlength],addr%arrlength);}
+inline ull getlen(val v){
+	ull addr;
+	if(v.type==TSTR)return v.str.length();
+	if(v.type==TREF){
+		if(is_obj[getarrid(v.num)])fatal("trying getting length of reference of an object%c",' ');
+		return addr=v.num,arrlens[(addr)/arrlength]+1;
+	}
+	fatal("type '%s' has no length property",valtypename[uint(v.type)]);
+	return 0;
+}
+inline void mdfaddr(ull addr){
+	if(addr>=0)return;
+	addr=-addr;
+	if(addr%arrlength>objresv)is_obj[getarrid(addr)]=1;
+	indices[getarrid(addr)].insert(addr);
+	if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=max(arrlens[getarrid(addr)],addr%arrlength);
+}
 umap<char,umap<string,ull>> builtinmethod;
 inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
@@ -1189,16 +1245,88 @@ namespace utils{
 	}
 	inline val arrindices(ull ref){
 		ull id=getarrid(ref);
-		uint i=0;
 		ull loc=allocarr();
-		for(auto a:indices[id])generef(-(loc+i))=indexval(a),mdfaddr(-(loc+i)),i++;
+		vector<val>ret;
+		for(auto a:indices[id])ret.push_back(indexval(a%arrlength));
+		for(uint i=0;i<ret.size();i++)generef(-(loc+i))=ret[i],mdfaddr(-(loc+i));
 		return val(loc,TREF);
+	}
+	inline val arrsort(ull ref){
+		ull id=getarrid(ref);
+		if(is_obj[id])fatal("object is not sortable%c",' ');
+		ull loc=allocarr();
+		vector<val>ret;
+		for(auto a:indices[id])ret.push_back(generef(-a));
+		sort(ret.begin(),ret.end(),[](const val&a,const val&b){return (a.smller(b)).is_true();});
+		for(uint i=0;i<ret.size();i++)generef(-(loc+i))=ret[i],mdfaddr(-(loc+i));
+		return val(loc,TREF);
+	}
+	inline val arrreverse(ull ref){
+		ull id=getarrid(ref);
+		if(is_obj[id])fatal("object is not reverse-able%c",' ');
+		ull loc=allocarr();
+		vector<val>ret;
+		for(auto a:indices[id])ret.push_back(generef(-a));
+		reverse(ret.begin(),ret.end());
+		for(uint i=0;i<ret.size();i++)generef(-(loc+i))=ret[i],mdfaddr(-(loc+i));
+		return val(loc,TREF);
+	}
+	inline val int2str(ull x,ull base){
+		string r="";int n=0;
+		if(x==0)return (string)"0";
+		if(x<0)n=1,x=-x;
+		if(abs(base)>36||abs(base)<=1)fatal("invalid number parsing base: %lld",base);
+		while(x){
+			int v=x%base;
+			if(v<0)v-=base,x+=base;
+			if(v>=0&&v<=9)r=r+char('0'+v);
+			else r=r+char('A'+v-10);
+			x/=base;
+		}
+		reverse(r.begin(),r.end());
+		if(n)r="-"+r;
+		return r;
+	}
+	inline val str2int(const string&x,ull base){
+		ull r=0,n=0;
+		if(abs(base)>36||abs(base)<=1)fatal("invalid number parsing base: %lld",base);
+		uint i=0;
+		if(x.size()&&x[0]=='-')n=1,i++;
+		for(;i<x.size();i++){
+			int v=0;char a=x[i];
+			if(isdigit(a))v=a&15;
+			else if(toupper(a)>='A'&&toupper(a)<=('A'+base-10-1))v=toupper(a)-'A'+10;
+			else fatal("invalid string of base %lld: '%s'",base,x.c_str());
+			r*=base,r+=v;
+		}
+		return r*(n?-1:1);
+	}
+	inline val utf8string(const vector<val>&v){
+		string r="";
+		if(v.size()==1&&v[0].type==TREF){
+			ull id=getarrid(v[0].num);
+			if(is_obj[id])fatal("invalid argument type for utf-8 string: [reference to an object]%c",' ');
+			for(auto a:indices[id]){
+				val v=generef(-a);
+				if(v.type!=TNUM)fatal("invalid argument type for utf-8 string: %s(%s)",valtypename[(uint)v.type],v.tostr().c_str());
+				r+=encd(v.num);
+			}
+		}
+		else{
+			for(auto a:v){
+				if(a.type!=TNUM)fatal("invalid argument type for utf-8 string: %s(%s)",valtypename[(uint)a.type],a.tostr().c_str());
+				r+=encd(a.num);
+			}
+		}
+		return r;
 	}
 }
 inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 	#define param(x) (args[args.size()-1-(x)])
 	#define need(x)\
-	do{if(args.size()<x)fatal("missing argument %d when calling %d",x,fid);}while(0)
+	do{if(args.size()<x)fatal("at least %d argument(s) needed when calling %d, %d given",x,fid,(uint)args.size());}while(0)
+	#define must(x)\
+	do{if(args.size()!=x)fatal("%d argument(s) needed when calling %d, %d given",x,fid,(uint)args.size());}while(0)
 	val retv;
 	#define arg(x) (generef(param(x)))
 	#define valtype(x) (arg(x).type)
@@ -1235,7 +1363,7 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 23:need(1);chktype(0,TNUM);retv=file_manager::file_eof(arg(0).num);break;
 		case 24:retv=clock();break;
 		case 25:need(1);chktype(0,TSTR);retv=system(arg(0).str.c_str());break;
-		case 26:retv=rand();break;
+		case 26:retv=1.0*rand()/RAND_MAX;break;
 		case 27:need(1);chktype(0,TNUM);srand(arg(0).num);retv=arg(0);break;
 		case 28:need(1);retv=getlen(arg(0));break;
 		case 29:need(1);chktype(0,TSTR);retv=arg(0).str.size()?arg(0).str[0]:0;break;
@@ -1254,6 +1382,17 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 43:need(1);chktype(0,TSTR);retv=utils::endswith(generef(this_obj).str,arg(0).str)?val(TTRUE):val(TFALSE);;break;
 		case 44:retv=utils::trim(generef(this_obj).str);break;
 		case 45:retv=utils::arrindices(generef(this_obj).num);break;
+		case 46:retv=utils::arrsort(generef(this_obj).num);break;
+		case 47:retv=utils::arrreverse(generef(this_obj).num);break;
+		case 48:retv=getlen(generef(this_obj).num);break;
+		case 49:need(1);retv=(string)valtypename[arg(0).type];break;
+		case 50:must(1);retv=arg(0).tostr();break;
+		case 51:must(1);chktype(0,TSTR&&valtype(0)!=TNUM);retv=str2num(arg(0).tostr());break;
+		case 52:must(1);chktype(0,TSTR);retv=hex2dec(arg(0).str);break;
+		case 53:must(1);chktype(0,TNUM);retv=dec2hex(arg(0).num);break;
+		case 54:must(2);chktype(0,TNUM);chktype(1,TNUM);retv=utils::int2str(arg(0).num,arg(1).num);break;
+		case 55:must(2);chktype(0,TSTR);chktype(1,TNUM);retv=utils::str2int(arg(0).str,arg(1).num);break;
+		case 56:{vector<val> vpr;for(uint i=0;i<args.size();i++)vpr.push_back(arg(i));retv=utils::utf8string(vpr);break;}
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1302,16 +1441,22 @@ void initvm(){
 	#define func(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC))
 	#define builtincls(type,name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),generef(getid(name))=val(r,TFUNC),builtinmethod[type][name]=getid(name))
 	#define method(name) (r=newfunc(vector<int>(),codeset(),vector<int>()),builtin.insert(r),vt.push_back(val(r,TFUNC)),vr.push_back(val((string)name)))
-	method("print"),method("exit"),method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
+	method("print");
+	makeobj("Console");
+	method("exit");
+	makeobj("System"),
+	method("read_number"),method("read_string"),method("read_line"),method("getchar"),method("eof");
 	makeobj("Console");
 	method("sin"),method("cos"),method("tan"),method("asin"),method("acos"),method("atan"),method("atan2"),method("exp"),method("log");
 	vt.push_back(val(acos(-1))),vr.push_back((string)"pi");
 	makeobj("Math");
 	method("open"),method("read_number"),method("read_string"),method("read_line"),method("write"),method("close"),method("eof");
 	makeobj("Fileio");
-	method("clock"),method("system"),method("rand"),method("srand");
+	method("clock"),method("system"),
 	vt.push_back(initarr("#",cmdargs)),vr.push_back((string)"args");
 	makeobj("System");
+	method("random"),method("set_random_seed");
+	makeobj("Math");
 	func("len"),func("ascii"),func("char");
 	generef(getid("credits"))=val(CREDITS);
 	generef(getid("help"))=val(HELP);
@@ -1325,7 +1470,9 @@ void initvm(){
 	builtincls(TSTR,"replace"),builtincls(TSTR,"split"),builtincls(TSTR,"index");
 	builtincls(TSTR,"substr"),builtincls(TSTR,"to_upper"),builtincls(TSTR,"to_lower");
 	builtincls(TSTR,"starts_with"),builtincls(TSTR,"ends_with"),builtincls(TSTR,"trim");
-	builtincls(TREF,"indice");
+	builtincls(TREF,"indice"),builtincls(TREF,"sort"),builtincls(TREF,"reverse"),builtincls(TREF,"length");
+	func("type"),func("string"),func("number"),func("dec"),func("hex");
+	func("int_to_str"),func("str_to_int"),func("utf8_string");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
