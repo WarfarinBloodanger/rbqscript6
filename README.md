@@ -55,12 +55,12 @@
 
 | 函数名 | 签名 |返回值类型 | 说明 |
 | :----------: | :----------: | :----------: | :----------: |
-| `len` | `(seq=any)` |  `number`| 返回 seq 的长度，若 seq 不是字符串或指向的不是列表则抛出异常  |
+| `len` | `(seq=string/reference)` |  `number`| 返回 seq 的长度，若 seq 不是字符串或指向的不是列表则抛出异常  |
 | `ascii` | `(s=string)` |  `number`| 返回给定字符串 s 第一个字符的 ascii 值 |
 | `char` | `(c=number)` | `string`| 返回 c 对应的 ascii 字符  |
 | `type` | `(val=any)` | `string`| 返回 val 的类型名  |
 | `string` | `(val=any)` | `string`| 将 val 字符串表示 |
-| `number` | `(val=string|number)` | `number`| 将 val 转化为实数 number 后返回。将在第一个非法字符停止。 |
+| `number` | `(val=string/number)` | `number`| 将 val 转化为实数 number 后返回。将在第一个非法字符停止。 |
 | `dec` | `(hexstr=string)` | `number`| 将 hexstr 转化为十进制的结果返回。必须以 `0x` 或 `0X` 开头。遇到非法字符将会抛出异常。 |
 | `hex` | `(decnum=number)` | `number`| 将 decnum 转化为十六进制字符串的结果返回。 |
 | `int_to_str` | `(val=number,base=number)` | `string`| 将 val 转化为 base 进制字符串的结果返回。base 为 -1、0、1 或者绝对值大于 36 的数时抛出异常 |
