@@ -434,7 +434,7 @@ codeset parse_expr(int precd){
 		default:fatal("expected value at line %d, column %d",tok.line,tok.column);
 	}
 	#define PF(code) v=tok.val,pr=prior(tok.type);curtok++;concat(s,parse_expr(pr));s.push_back(code);break
-	while(curtok<toks.size()&&prior(tok.type)>=precd){
+	while(curtok<toks.size()&&prior(tok.type)>precd){
 		int pr;string v;
 		switch(tok.type){
 			case TOK_ASS:PF(ASSIGN);
