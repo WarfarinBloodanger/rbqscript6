@@ -1331,10 +1331,10 @@ inline string ref2string(ull ref){
 		stringing.insert(ref);
 		ret<<"{";
 		for(auto a:indices[id]){
-			ret<<"'"<<(-a)<<"': "<<generef(-a).tostr()<<",";
+			ret<<"'"<<indexval(-a).tostr()<<"': "<<generef(-a).tostr()<<",";
 		}
 		string r=ret.str();
-		r.back()='}';
+		if(r.size()>1)r.back()='}';
 		stringing.erase(stringing.find(ref));
 		return r;
 	}
@@ -1346,7 +1346,7 @@ inline string ref2string(ull ref){
 			ret<<generef(-a).tostr()<<",";
 		}
 		string r=ret.str();
-		r.back()=']';
+		if(r.size()>1)r.back()=']';
 		stringing.erase(stringing.find(ref));
 		return r;
 	}
