@@ -1331,7 +1331,7 @@ inline string ref2string(ull ref){
 		stringing.insert(ref);
 		ret<<"{";
 		for(auto a:indices[id]){
-			ret<<"'"<<indexval(-a).tostr()<<"': "<<generef(-a).tostr()<<",";
+			ret<<"'"<<indexval(a).tostr()<<"': "<<generef(-a).tostr()<<",";
 		}
 		string r=ret.str();
 		if(r.size()>1)r.back()='}';
