@@ -676,6 +676,7 @@ const uint MAX_FILE_CNT=1024*4;
 const uint RUNSTACK_SIZE=1024*1024;
 typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
 const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
+inline string ref2string(ull);
 struct val{
 	double num;
 	string str;
@@ -693,7 +694,7 @@ struct val{
 			case TNUM:return num2str(num);
 			case TSTR:return str;
 			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
-			case TREF:return "<ref "+num2str(num)+">";
+			case TREF:return ref2string((ull)num);
 			case TFUNC:return "<func "+num2str(num)+">";
 			case TNULL:return "null";
 			case TUNDEF:return "undefined";
@@ -1318,6 +1319,35 @@ namespace utils{
 				r+=encd(a.num);
 			}
 		}
+		return r;
+	}
+}
+set<ull>stringing;
+inline string ref2string(ull ref){
+	ull id=getarrid(ref);
+	stringstream ret("");
+	if(is_obj[id]){
+		if(stringing.count(ref))return "{...}";
+		stringing.insert(ref);
+		ret<<"{";
+		for(auto a:indices[id]){
+			ret<<"'"<<(-a)<<"': "<<generef(-a).tostr()<<",";
+		}
+		string r=ret.str();
+		r.back()='}';
+		stringing.erase(stringing.find(ref));
+		return r;
+	}
+	else{
+		if(stringing.count(ref))return "[...]";
+		stringing.insert(ref);
+		ret<<"[";
+		for(auto a:indices[id]){
+			ret<<generef(-a).tostr()<<",";
+		}
+		string r=ret.str();
+		r.back()=']';
+		stringing.erase(stringing.find(ref));
 		return r;
 	}
 }
