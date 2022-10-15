@@ -431,7 +431,7 @@ codeset parse_expr(int precd){
 			//s.push_back(ASSIGN);
 			break;
 		}
-		default:fatal("expected value at line %d, column %d",tok.line,tok.column);
+		default:fatal("unexpected %s at line %d, column %d, expected an expression",tokenname[(uint)tok.type],tok.line,tok.column);
 	}
 	#define PF(code) v=tok.val,pr=prior(tok.type);curtok++;concat(s,parse_expr(pr));s.push_back(code);break
 	while(curtok<toks.size()&&prior(tok.type)>precd){
@@ -677,6 +677,7 @@ const uint RUNSTACK_SIZE=1024*1024;
 typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
 const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
 inline string ref2string(ull);
+inline string strictstr(const string&);
 struct val{
 	double num;
 	string str;
@@ -689,10 +690,10 @@ struct val{
 	val(valtype t){type=t;}
 	val(int64_t ref,valtype t){type=t,num=ref;}
 	bool is_true()const{return !(type==TFALSE||type==TNULL||(type==TNUM&&num==0));}
-	string tostr()const{
+	string tostr(int strict=0)const{
 		switch(type){
 			case TNUM:return num2str(num);
-			case TSTR:return str;
+			case TSTR:return strict?strictstr(str):str;
 			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
 			case TREF:return ref2string((ull)num);
 			case TFUNC:return "<func "+num2str(num)+">";
@@ -1022,6 +1023,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				ull len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				ull loc=allocarr(),nr=newreg();
+				is_obj[getarrid(loc)]=1;
 				val r=val(loc,TREF),key; 
 				while(len--){
 					key=generef(*(curstk-1));
@@ -1331,10 +1333,11 @@ inline string ref2string(ull ref){
 		stringing.insert(ref);
 		ret<<"{";
 		for(auto a:indices[id]){
-			ret<<"'"<<indexval(a).tostr()<<"': "<<generef(-a).tostr()<<",";
+			ret<<indexval(a%arrlength).tostr(1)<<":"<<generef(-a).tostr(1)<<",";
 		}
 		string r=ret.str();
 		if(r.size()>1)r.back()='}';
+		else r.push_back('}');
 		stringing.erase(stringing.find(ref));
 		return r;
 	}
@@ -1342,14 +1345,39 @@ inline string ref2string(ull ref){
 		if(stringing.count(ref))return "[...]";
 		stringing.insert(ref);
 		ret<<"[";
+		ull last=0;
 		for(auto a:indices[id]){
-			ret<<generef(-a).tostr()<<",";
+			if(last!=0&&abs(a-last)>1)ret<<"<"<<abs(a-last)-1<<" empty "<<(abs(a-last)-1>1?"slots":"slot")<<">,";
+			ret<<generef(-a).tostr(1)<<",";
+			last=a;
 		}
 		string r=ret.str();
 		if(r.size()>1)r.back()=']';
+		else r.push_back(']');
 		stringing.erase(stringing.find(ref));
-		return r;
+		return "Array "+r;
 	}
+}
+inline string strictstr(const string&str){
+	string r="";
+	for(auto a:str){
+		switch(a){
+			case '\a':r+="\\a";break;
+			case '\t':r+="\\t";break;
+			case '\n':r+="\\n";break;
+			case '\r':r+="\\r";break;
+			case '\b':r+="\\b";break;
+			case '\\':r+="\\\\";break;
+			case '"':r+="\"";break;
+			default:{
+				if(!isprint(a))r+="\\u00"+utils::int2str((unsigned char)a,16).str;
+				else r+=a;
+				break;
+			}
+		}
+	}
+	return "\""+r+"\"";
+	return "\""+r+"\"";
 }
 inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 	#define param(x) (args[args.size()-1-(x)])
@@ -1445,13 +1473,13 @@ inline int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull
 bool inited;
 inline val initarr(const string&name,const vector<val>&v){
 	val vr=val(allocarr(),TREF);
-	for(uint i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i];
+	for(uint i=0;i<v.size();i++)generef(getaddr(vr,i))=v[i],mdfaddr(getaddr(vr,i));
 	generef(getid(name))=vr;
 	return vr;
 }
 inline val initarr(const string&name,const vector<val>&v,const vector<val>&id){
 	val vr=val(allocarr(),TREF);
-	for(uint i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i];
+	for(uint i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i],mdfaddr(getaddr(vr,id[i]));
 	generef(getid(name))=vr;
 	return vr;
 }
@@ -1559,7 +1587,7 @@ namespace launcher{
 			tokenize(src);codeset c;
 			while(curtok<toks.size())concat(c,compile());
 			if(c.size()&&c[c.size()-1]==POP)c[c.size()-1]=RETURN;
-			cout<<vm::generef(vm::runbytes(c,vm::vmstack)).tostr()<<endl;
+			cout<<vm::generef(vm::runbytes(c,vm::vmstack)).tostr(1)<<endl;
 		}catch(string&s){cout<<s<<endl;}
 			cout<<">>> ";
 		}
