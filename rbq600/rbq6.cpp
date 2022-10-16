@@ -423,7 +423,7 @@ codeset parse_expr(int precd){
 			readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
 			concat(s,loadint(tmp));
 			readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
-			b2.push_back(LOADNULL),b2.push_back(RETURN);
+			b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
 			concat(s,loadint(b2.size()));
 			concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
 			concat(s,b1),concat(s,compile_upvalue(f)),concat(s,b2);
@@ -482,7 +482,6 @@ codeset parse_expr(int precd){
 				break;
 			}
 			case TOK_RPR:case TOK_RBK:return s;
-			case TOK_FEN:nexttok();return s;
 			default:return s;
 		}
 	}
@@ -563,6 +562,7 @@ codeset compile(){
 		case TOK_VAR:readtok(TOK_VAR),concat(s,parse_decl());break;
 		default:concat(s,parse_expr(0));s.push_back(POP);break;
 	}
+	if(tok.type==TOK_FEN)readtok(TOK_FEN);
 	return s;
 }
 void fillholder(codeset&s,const uint&led){
@@ -656,7 +656,7 @@ codeset compile_func(){
 	readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
 	concat(s,loadint(tmp));
 	readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
-	b2.push_back(LOADNULL),b2.push_back(RETURN);
+	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
 	concat(s,loadint(b2.size()));
 	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
 	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
