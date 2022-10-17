@@ -63,6 +63,7 @@ OPCODE NEWFRAME=0XE7;
 OPCODE DELFRAME=0XE8;
 OPCODE POP=0XE9;
 OPCODE LOADTHIS=0XEA;
+OPCODE JUMP_IF_TRUE=0XEB;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1; 
@@ -105,7 +106,7 @@ inline int prior(char tok){
 		case TOK_MUL:case TOK_DIV:case TOK_MOD:return 120;
 		case TOK_NOT:case TOK_BITNOT:return 130;
 		case TOK_LPR:case TOK_LBK:case TOK_DOT:return 140; 
-		default:return 0;
+		default:return 1;
 	}
 }
 struct token{
@@ -389,11 +390,25 @@ codeset parse_expr(int precd){
 			else readtok(t),s.push_back(byte);\
 			break;\
 		}
+		#define chklit_strict(t,str)\
+		case t:{\
+			if(liter)concat(s,compile_str(#str)),readtok(t),s.push_back(GETADDR);\
+			else fatal("unexpected %s at line %d, column %d, expected a property name",tokenname[(uint)tok.type],tok.line,tok.column);\
+			break;\
+		}
 		chklit(TOK_TRUE,"true",LOADTRUE);
 		chklit(TOK_FALSE,"false",LOADFALSE);
 		chklit(TOK_NULL,"null",LOADNULL);
 		chklit(TOK_UNDEFINED,"undefined",LOADUNDEFINED);
 		chklit(TOK_THIS,"this",LOADTHIS);
+		chklit_strict(TOK_IF,"if");
+		chklit_strict(TOK_ELSE,"else");
+		chklit_strict(TOK_WHILE,"while");
+		chklit_strict(TOK_RET,"return");
+		chklit_strict(TOK_FOR,"for");
+		chklit_strict(TOK_BREAK,"break");
+		chklit_strict(TOK_CTN,"continue");
+		chklit_strict(TOK_INCLUDE,"include");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
@@ -416,19 +431,20 @@ codeset parse_expr(int precd){
 		case TOK_ADD:readtok(TOK_ADD);concat(s,parse_expr(130));s.push_back(POSITIVE);break;
 		case TOK_SUB:readtok(TOK_SUB);concat(s,parse_expr(130));s.push_back(NEGATIVE);break;
 		case TOK_FUNC:{
-			string f=anonyfunc();
-			//s.push_back(LOADVAR);concat(s,loadint(getid(f)));
-			readtok(TOK_FUNC);s.push_back(LOADFUNC);
-			new_scope();
-			readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
-			concat(s,loadint(tmp));
-			readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
-			b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
-			concat(s,loadint(b2.size()));
-			concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
-			concat(s,b1),concat(s,compile_upvalue(f)),concat(s,b2);
-			del_scope();
-			//s.push_back(ASSIGN);
+			if(liter)concat(s,compile_str("function")),readtok(TOK_FUNC),s.push_back(GETADDR);
+			else{
+				string f=anonyfunc();
+				readtok(TOK_FUNC);s.push_back(LOADFUNC);
+				new_scope();
+				readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
+				concat(s,loadint(tmp));
+				readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
+				b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
+				concat(s,loadint(b2.size()));
+				concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
+				concat(s,b1),concat(s,compile_upvalue(f)),concat(s,b2);
+				del_scope();
+			}
 			break;
 		}
 		default:fatal("unexpected %s at line %d, column %d, expected an expression",tokenname[(uint)tok.type],tok.line,tok.column);
@@ -449,8 +465,22 @@ codeset parse_expr(int precd){
 				concat(s,loadint(b2.size()));
 				break;
 			}
-			case TOK_OR:PF(OR);
-			case TOK_AND:PF(AND);
+			case TOK_OR:{
+				v=tok.val,pr=prior(tok.type);curtok++;
+				b1=parse_expr(pr); 
+				s.push_back(OR);
+				concat(s,loadint(b1.size()));
+				concat(s,b1);
+				break;
+			}
+			case TOK_AND:{
+				v=tok.val,pr=prior(tok.type);curtok++;
+				b1=parse_expr(pr); 
+				s.push_back(AND);
+				concat(s,loadint(b1.size()));
+				concat(s,b1);
+				break;
+			}
 			case TOK_BITOR:PF(BITOR);
 			case TOK_BITAND:PF(BITAND);
 			case TOK_XOR:PF(XOR);
@@ -482,6 +512,7 @@ codeset parse_expr(int precd){
 				break;
 			}
 			case TOK_RPR:case TOK_RBK:return s;
+			case TOK_FEN:nexttok();return s;
 			default:return s;
 		}
 	}
@@ -989,9 +1020,31 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			MATH(BITOR,|);
 			MATH(LSHF,<<);
 			MATH(RSHF,>>);
-			MATH(AND,&&);
-			MATH(OR,||);
 			MATH(XOR,^);
+			case AND:{
+				ip++;
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				bool cond=generef(*(curstk-1)).is_true();
+				if(!cond)ip+=offset;
+				else{
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+				}
+				break;
+			}
+			case OR:{
+				ip++;
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				bool cond=generef(*(curstk-1)).is_true();
+				if(cond)ip+=offset;
+				else{
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+				}
+				break;
+			}
 			#undef MATH
 			#define UNARY(v,sym)\
 			case v:{\
