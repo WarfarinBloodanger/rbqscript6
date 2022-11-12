@@ -11,7 +11,7 @@ struct hasher{
 	size_t operator()(const uint&x)const{return x;}
 };
 const string HELP = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
-const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6] or send email to arknightswarfarin@163.com for more.";
+const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string CREDITS = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string LICENSE = "See [https://github.com/WarfarinBloodanger/rbqscript6]. GNU 3.0 License is used.";
 #define umap gp_hash_table
@@ -897,12 +897,18 @@ inline ull getlen(val v){
 	fatal("type '%s' has no length property",valtypename[uint(v.type)]);
 	return 0;
 }
-inline void mdfaddr(ull addr){
+inline void mdfaddr(ull addr,int del=0){
 	if(addr>=0)return;
 	addr=-addr;
 	if(addr%arrlength>objresv)is_obj[getarrid(addr)]=1;
-	indices[getarrid(addr)].insert(addr);
-	if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=max(arrlens[getarrid(addr)],addr%arrlength);
+	if(!del){
+		indices[getarrid(addr)].insert(addr);
+		if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=max(arrlens[getarrid(addr)],addr%arrlength);
+	}
+	else{
+		indices[getarrid(addr)].erase(addr); 
+		if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=arrlens[getarrid(addr)]-1;
+	}
 }
 umap<char,umap<string,ull>> builtinmethod;
 inline int builtin_method(char type,const string&s,ull&r){
@@ -1327,6 +1333,22 @@ namespace utils{
 		for(uint i=0;i<ret.size();i++)generef(-(loc+i))=ret[i],mdfaddr(-(loc+i));
 		return val(loc,TREF);
 	}
+	inline val arrpush(ull ref,const val&v){
+		ull id=getarrid(ref);
+		if(is_obj[id])fatal("can not push elements into an object reference%c",' ');
+		ull addr=indices[id].size()?*indices[id].rbegin():ref;
+		addr++,generef(-addr)=v,mdfaddr(-addr);
+		return v;
+	}
+	inline val arrpop(ull ref){
+		ull id=getarrid(ref);
+		if(is_obj[id])fatal("can not pop elements from an object reference%c",' ');
+		if(!indices[id].size())return val(0,TUNDEF);
+		ull addr=*indices[id].rbegin();
+		val ret=generef(-addr);
+		mdfaddr(-addr,1);
+		return ret;
+	}
 	inline val int2str(ull x,ull base){
 		string r="";int n=0;
 		if(x==0)return (string)"0";
@@ -1495,7 +1517,7 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 45:retv=utils::arrindices(generef(this_obj).num);break;
 		case 46:retv=utils::arrsort(generef(this_obj).num);break;
 		case 47:retv=utils::arrreverse(generef(this_obj).num);break;
-		case 48:retv=getlen(generef(this_obj).num);break;
+		case 48:retv=getlen(val(generef(this_obj).num,TREF));break;
 		case 49:need(1);retv=(string)valtypename[arg(0).type];break;
 		case 50:must(1);retv=arg(0).tostr();break;
 		case 51:must(1);chktype(0,TSTR&&valtype(0)!=TNUM);retv=str2num(arg(0).tostr());break;
@@ -1504,6 +1526,8 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 54:must(2);chktype(0,TNUM);chktype(1,TNUM);retv=utils::int2str(arg(0).num,arg(1).num);break;
 		case 55:must(2);chktype(0,TSTR);chktype(1,TNUM);retv=utils::str2int(arg(0).str,arg(1).num);break;
 		case 56:{vector<val> vpr;for(uint i=0;i<args.size();i++)vpr.push_back(arg(i));retv=utils::utf8string(vpr);break;}
+		case 57:for(uint i=0;i<args.size();i++)retv=utils::arrpush(generef(this_obj).num,arg(i));break;
+		case 58:retv=utils::arrpop(generef(this_obj).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1584,6 +1608,7 @@ void initvm(){
 	builtincls(TREF,"indice"),builtincls(TREF,"sort"),builtincls(TREF,"reverse"),builtincls(TREF,"length");
 	func("type"),func("string"),func("number"),func("dec"),func("hex");
 	func("int_to_str"),func("str_to_int"),func("utf8_string");
+	builtincls(TREF,"push"),builtincls(TREF,"pop");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
