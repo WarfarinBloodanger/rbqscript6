@@ -94,3 +94,5 @@
 | `reference.sort` | `()` | `reference`| 返回 this 指向的对象中所有元素按值排序后的结果。this 必须指向列表 |
 | `reference.reverse` | `()` | `reference`| 返回 this 指向的对象中所有元素前后倒置的结果。this 必须指向列表 |
 | `reference.length` | `()` | `reference`| 返回 this 指向的对象的长度。this 必须指向列表|
+| `reference.push` | `(...)` | `any`| 将所有参数依次追加到 this 指向的对象的尾部，并返回最后一个参数。this 必须指向列表  |
+| `reference.pop` | `()` | `any`| 将 this 指向的对象的的最后一个元素弹出，并返回这个值。this 必须指向列表  |
