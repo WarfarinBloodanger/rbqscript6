@@ -1,5 +1,6 @@
 #include<bits/stdc++.h>
 using namespace std;
+typedef double DB;
 #define double long double
 typedef uint32_t uint;
 typedef unsigned char uchar;
@@ -19,6 +20,7 @@ OPCODE LOADFALSE=0XA8;
 OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
+OPCODE LOADLONGNUM=0XAC;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -88,12 +90,20 @@ struct bitparse{
 		ull n;
 	};
 };
+struct bitparse8{
+	union{
+		DB x;
+		uchar bits[8];
+		ull n;
+	};
+};
 struct func{
 	vector<int> pid,upvs;
 	codeset instr;
 	int id;
 };
 bitparse bpser; 
+bitparse8 bpser8; 
 char buf[24];
 map<int,string>builtin;
 string chkid(int id){
@@ -131,7 +141,7 @@ void runbytes(const codeset&s){
 				ip+=3;
 				uint t=id;
 				uchar v=0;
-				while(id--)v=s[++ip]*0xfu+s[++ip],str.push_back(v);
+				while(id--)v=s[ip+1]*0xfu+s[ip+2],ip+=2,str.push_back(v);
 				str+='\'';
 				if(str.size()>12)str=str.substr(0,8)+"...'";
 				addall();
@@ -178,6 +188,21 @@ void runbytes(const codeset&s){
 			}
 			case LOADNUM:{
 				ip++;
+				bpser8.bits[0]=s[ip];
+				bpser8.bits[1]=s[ip+1];
+				bpser8.bits[2]=s[ip+2];
+				bpser8.bits[3]=s[ip+3];
+				bpser8.bits[4]=s[ip+4];
+				bpser8.bits[5]=s[ip+5];
+				bpser8.bits[6]=s[ip+6];
+				bpser8.bits[7]=s[ip+7];
+				ip+=7;
+				addall();
+				output("LOADNUM",num2str(bpser.x),"");
+				break;
+			}
+			case LOADLONGNUM:{
+				ip++;
 				bpser.bits[0]=s[ip];
 				bpser.bits[1]=s[ip+1];
 				bpser.bits[2]=s[ip+2];
@@ -196,7 +221,7 @@ void runbytes(const codeset&s){
 				bpser.bits[15]=s[ip+15];
 				ip+=15;
 				addall();
-				output("LOADNUM",num2str(bpser.x),"");
+				output("LOADLONGNUM",num2str(bpser.x),"");
 				break;
 			}
 			case POP:{
