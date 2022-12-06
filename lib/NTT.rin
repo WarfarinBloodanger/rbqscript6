@@ -1,0 +1,61 @@
+function Conv(_a,_b){
+	var a=[],b=[],rev=[],c=[]
+	for(i=0;i<len(_a);i=i+1)a[i]=_a[i]
+	for(i=0;i<len(_b);i=i+1)b[i]=_b[i]
+	var mod=998244353
+	var g=3
+	var gi=332748118
+	function qpow(x,y){
+		ans=1
+		while(y){
+			if(y&1)ans=ans*x%mod
+			x=x*x%mod
+			y=y>>1
+		}
+		return ans
+	}
+	function ntt(a,n,type){
+		for(i=0;i<n;i=i+1){
+			if(i<rev[i]){
+				var tmp=a[i]
+				a[i]=a[rev[i]]
+				a[rev[i]]=tmp
+			}
+		}
+		for(i=1;i<n;i=i*2){
+			gn=0
+			if(type){
+				gn=qpow(g,Math.floor((mod-1)/(i<<1)))
+			}
+			else{
+				gn=qpow(gi,Math.floor((mod-1)/(i<<1)))
+			}
+			for(j=0;j<n;j=j+(i<<1)){
+				g0=1
+				for(k=0;k<i;k=k+1){
+					x=a[j+k]
+					y=g0*a[i+j+k]%mod
+					a[j+k]=(x+y)%mod
+					a[i+j+k]=(x-y+mod)%mod
+					g0=g0*gn%mod
+				}
+			}
+		}
+	}
+	var n=len(a)-1
+	var m=len(b)-1
+	var t=max(Math.ceil(Math.log2(n+m)),1)
+	var L=1<<t
+	for(i=n+1;i<=L;i=i+1)a[i]=0
+	for(i=m+1;i<=L;i=i+1)b[i]=0
+	rev[0]=0
+	for(i=0;i<L;i=i+1)rev[i]=(rev[i>>1]>>1)|((i&1)<<(t-1))
+	ntt(a,L,1)
+	ntt(b,L,1)
+	for(i=0;i<=L;i=i+1)c[i]=a[i]*b[i]%mod
+	ntt(c,L,0)
+	var inv=qpow(L,mod-2)
+	for(i=0;i<=n+m;i=i+1)c[i]=c[i]*inv%mod
+	return c
+}
+Console.print(Conv([1,2,3,4],[5,6,7,8]))
