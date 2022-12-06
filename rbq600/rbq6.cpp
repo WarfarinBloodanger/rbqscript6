@@ -63,7 +63,11 @@ const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6]
 const string CREDITS = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string LICENSE = "See [https://github.com/WarfarinBloodanger/rbqscript6]. GNU 3.0 License is used.";
 #define umap cc_hash_table
+typedef double DB;
 #define double long double
+
+int force_short_double=0;
+
 OPCODE NOP=0x88;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
@@ -77,6 +81,7 @@ OPCODE LOADFALSE=0XA8;
 OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
+OPCODE LOADLONGNUM=0XAC;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -314,6 +319,13 @@ inline uint getid(const string&s,int lcl=0){
 	}
 	return names[usedname+1]=s,scopes[scopes.size()-1][s]=++usedname;
 }
+struct bitparse8{
+	union{
+		DB x;
+		uchar bits[8];
+		ull n;
+	};
+};
 struct bitparse{
 	union{
 		double x;
@@ -322,6 +334,7 @@ struct bitparse{
 	};
 };
 bitparse bpser;
+bitparse8 bpser8;
 long long hex2dec(const string&s){
 	long long x=0,v=0;
 	uint i=0;
@@ -361,9 +374,16 @@ inline void concat(codeset &a,const codeset &b){
 } 
 codeset compile_num(double x){
 	codeset s;
-	bpser.x=x;
-	s.push_back(LOADNUM);
-	for(int i=0;i<16;i++)s.push_back(bpser.bits[i]);
+	if(force_short_double){
+		bpser8.x=x;
+		s.push_back(LOADNUM);
+		for(int i=0;i<8;i++)s.push_back(bpser8.bits[i]);
+	}
+	else{
+		bpser.x=x;
+		s.push_back(LOADLONGNUM);
+		for(int i=0;i<16;i++)s.push_back(bpser.bits[i]);
+	}
 	return s;
 }
 inline codeset loadshort(int v){
@@ -371,9 +391,6 @@ inline codeset loadshort(int v){
 } 
 inline codeset loadint(int v){
 	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
-}
-inline codeset loadlong(int v){
-	codeset s;concat(s,loadint(v/0xffffffffull)),concat(s,loadint(v%0xffffffffull));return s;
 }
 long long hex2dec(const string&s);
 string encd(ull v){
@@ -1042,6 +1059,21 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				BACK;
 			}
 			case LOADNUM:{
+				ip++;
+				bpser8.bits[0]=s[ip];
+				bpser8.bits[1]=s[ip+1];
+				bpser8.bits[2]=s[ip+2];
+				bpser8.bits[3]=s[ip+3];
+				bpser8.bits[4]=s[ip+4];
+				bpser8.bits[5]=s[ip+5];
+				bpser8.bits[6]=s[ip+6];
+				bpser8.bits[7]=s[ip+7];
+				ip+=7;
+				*curstk=newreg();
+				generef(*curstk)=val(bpser8.x),curstk++;
+				BACK;
+			}
+			case LOADLONGNUM:{
 				ip++;
 				bpser.bits[0]=s[ip];
 				bpser.bits[1]=s[ip+1];
@@ -1749,7 +1781,7 @@ namespace launcher{
 	vector<string> files;
 	void apply_argv(char *arg){
 		uint len=strlen(arg);
-		if(arg[0]=='-')for(uint i=1;i<len;i++)arg[i]=tolower(arg[i]),cmp=cmp||arg[i]=='c',run=run||arg[i]=='r';
+		if(arg[0]=='-')for(uint i=1;i<len;i++)arg[i]=tolower(arg[i]),cmp=cmp||arg[i]=='c',run=run||arg[i]=='r',force_short_double=force_short_double||arg[i]=='d';
 		else files.push_back(arg);
 	}
 	void start_compile2(){
