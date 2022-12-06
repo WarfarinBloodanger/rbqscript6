@@ -1,3 +1,51 @@
+#pragma GCC optimize(3)
+#pragma GCC target("avx")
+#pragma GCC optimize("Ofast")
+#pragma GCC optimize("inline")
+#pragma GCC optimize("-fgcse")
+#pragma GCC optimize("-fgcse-lm")
+#pragma GCC optimize("-fipa-sra")
+#pragma GCC optimize("-ftree-pre")
+#pragma GCC optimize("-ftree-vrp")
+#pragma GCC optimize("-fpeephole2")
+#pragma GCC optimize("-ffast-math")
+#pragma GCC optimize("-fsched-spec")
+#pragma GCC optimize("unroll-loops")
+#pragma GCC optimize("-falign-jumps")
+#pragma GCC optimize("-falign-loops")
+#pragma GCC optimize("-falign-labels")
+#pragma GCC optimize("-fdevirtualize")
+#pragma GCC optimize("-fcaller-saves")
+#pragma GCC optimize("-fcrossjumping")
+#pragma GCC optimize("-fthread-jumps")
+#pragma GCC optimize("-funroll-loops")
+#pragma GCC optimize("-fwhole-program")
+#pragma GCC optimize("-freorder-blocks")
+#pragma GCC optimize("-fschedule-insns")
+#pragma GCC optimize("inline-functions")
+#pragma GCC optimize("-ftree-tail-merge")
+#pragma GCC optimize("-fschedule-insns2")
+#pragma GCC optimize("-fstrict-aliasing")
+#pragma GCC optimize("-fstrict-overflow")
+#pragma GCC optimize("-falign-functions")
+#pragma GCC optimize("-fcse-skip-blocks")
+#pragma GCC optimize("-fcse-follow-jumps")
+#pragma GCC optimize("-fsched-interblock")
+#pragma GCC optimize("-fpartial-inlining")
+#pragma GCC optimize("no-stack-protector")
+#pragma GCC optimize("-freorder-functions")
+#pragma GCC optimize("-findirect-inlining")
+#pragma GCC optimize("-fhoist-adjacent-loads")
+#pragma GCC optimize("-frerun-cse-after-loop")
+#pragma GCC optimize("inline-small-functions")
+#pragma GCC optimize("-finline-small-functions")
+#pragma GCC optimize("-ftree-switch-conversion")
+#pragma GCC optimize("-foptimize-sibling-calls")
+#pragma GCC optimize("-fexpensive-optimizations")
+#pragma GCC optimize("-funsafe-loop-optimizations")
+#pragma GCC optimize("inline-functions-called-once")
+#pragma GCC optimize("-fdelete-null-pointer-checks")
+#pragma GCC optimize(2)
 #include<bits/stdc++.h>
 #include<ext/pb_ds/tree_policy.hpp>
 #include<ext/pb_ds/assoc_container.hpp>
@@ -14,7 +62,7 @@ const string HELP = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string CREDITS = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string LICENSE = "See [https://github.com/WarfarinBloodanger/rbqscript6]. GNU 3.0 License is used.";
-#define umap gp_hash_table
+#define umap cc_hash_table
 OPCODE NOP=0x88;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
@@ -900,14 +948,15 @@ inline ull getlen(val v){
 inline void mdfaddr(ull addr,int del=0){
 	if(addr>=0)return;
 	addr=-addr;
-	if(addr%arrlength>objresv)is_obj[getarrid(addr)]=1;
+	ull id=getarrid(addr);
+	if(addr%arrlength>objresv)is_obj[id]=1;
 	if(!del){
-		indices[getarrid(addr)].insert(addr);
-		if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=max(arrlens[getarrid(addr)],addr%arrlength);
+		indices[id].insert(addr);
+		if(!is_obj[id])arrlens[id]=max(arrlens[id],addr%arrlength);
 	}
 	else{
-		indices[getarrid(addr)].erase(addr); 
-		if(!is_obj[getarrid(addr)])arrlens[getarrid(addr)]=arrlens[getarrid(addr)]-1;
+		indices[id].erase(addr); 
+		if(!is_obj[id])arrlens[id]=arrlens[id]-1;
 	}
 }
 umap<char,umap<string,ull>> builtinmethod;
@@ -937,51 +986,55 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	uint ip=0,len=s.size();
 	runstack curstk=stk_start;
 	stack<ull>cur_this_obj;
+	#define BACK\
+	ip++;\
+	goto DECODE
 	while(ip<len){
+		DECODE:
 		switch(s[ip]){
 			default:{
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
-				break;
+				BACK;
 			}
 			case LOADSTR:{
 				string str="";
 				ip++;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint id=(s[ip]<<24ull)+(s[ip+1]<<16ull)+(s[ip+2]<<8ull)+s[ip+3];
 				ip+=3;
 				uchar v=0;
 				while(id--)v=s[ip+1]*0xfu+s[ip+2],ip+=2,str.push_back(v);
 				*curstk=newreg();
 				generef(*curstk)=val(str),curstk++;
-				break;
+				BACK;
 			}
 			case LOADTRUE:{
 				ull nr=newreg();generef(nr)=val(0,TTRUE),*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case LOADFALSE:{
 				ull nr=newreg();generef(nr)=val(0,TFALSE),*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case LOADNULL:{
 				ull nr=newreg();generef(nr)=val(0,TNULL),*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case LOADUNDEFINED:{
 				ull nr=newreg();generef(nr)=val(0,TUNDEF),*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case LOADVAR:case LOADVARLOCAL:{
 				ip++;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint id=(s[ip]<<24ull)+(s[ip+1]<<16ull)+(s[ip+2]<<8ull)+s[ip+3];
 				ip+=3;
 				*curstk=id,curstk++;
-				break;
+				BACK;
 			}
 			case ASSIGN:case ASSIGNLOCAL:{
 				generef(*(curstk-2),s[ip]==ASSIGNLOCAL)=generef(*(curstk-1)),mdfaddr(*(curstk-2));
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--;
-				break;
+				BACK;
 			}
 			case LOADNUM:{
 				ip++;
@@ -996,12 +1049,11 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				ip+=7;
 				*curstk=newreg();
 				generef(*curstk)=val(bpser.x),curstk++;
-				break;
+				BACK;
 			}
 			case POP:{
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
-				curstk--;break;
-				break;
+				curstk--;BACK;
 			}
 			#define MATH(v,sym)\
 			case v:{\
@@ -1009,7 +1061,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				generef(nr)=generef(*(curstk-2)) sym generef(*(curstk-1));\
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
 				curstk--,*(curstk-1)=nr;\
-				break;\
+				BACK;\
 			}
 			MATH(ADD,+);
 			MATH(SUB,-);
@@ -1029,7 +1081,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			MATH(XOR,^);
 			case AND:{
 				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if(!cond)ip+=offset;
@@ -1037,11 +1089,11 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 				}
-				break;
+				BACK;
 			}
 			case OR:{
 				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if(cond)ip+=offset;
@@ -1049,7 +1101,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 				}
-				break;
+				BACK;
 			}
 			#undef MATH
 			#define UNARY(v,sym)\
@@ -1058,15 +1110,16 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				generef(nr)=sym generef(*(curstk-1));\
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
 				*(curstk-1)=nr;\
-				break;\
+				BACK;\
 			}
 			UNARY(NOT,!);
 			UNARY(BITNOT,~);
 			UNARY(POSITIVE,+);
 			UNARY(NEGATIVE,-);
+			#undef UNARY
 			case LOADARR:{
 				ip++;
-				int len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				int len=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				ull loc=allocarr(),nr=newreg();
 				while(len--){
@@ -1075,11 +1128,11 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 					curstk--;
 				}
 				generef(nr)=val(loc,TREF),*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case LOADOBJ:{
 				ip++;
-				ull len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ull len=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				ull loc=allocarr(),nr=newreg();
 				is_obj[getarrid(loc)]=1;
@@ -1093,37 +1146,37 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 					curstk--;
 				}
 				generef(nr)=r,*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case GETADDR:{
 				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
 				cur_this_obj.push(*(curstk-2));
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
-				break;
+				BACK;
 			}
 			case LOADFUNC:{
 				ip++;
-				uint pcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint pcnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=4;
-				uint size=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint size=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=4;
-				uint upvcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint upvcnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=4;
-				ull nr=newreg(),v;
+				ull nr=newreg();
 				vector<int> pid,upvs;codeset instr;
-				while(pcnt--)pid.push_back(s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
-				while(upvcnt--)upvs.push_back(v=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
+				while(pcnt--)pid.push_back((s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3]),ip+=4;
+				while(upvcnt--)upvs.push_back((s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3]),ip+=4;
 				while(size--)instr.push_back(s[ip]),ip++;
 				ip--;
 				ull fid=newfunc(pid,instr,upvs);
 				generef(nr)=val(fid,TFUNC);
 				*curstk=nr,curstk++;
-				break;
+				BACK;
 			}
 			case CALL:{
 				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint argscnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				vector<ull> args,freelist;
 				while(argscnt--){
@@ -1138,7 +1191,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				curstk--;
 				ull nr=call_func(fid,args,curstk,cur_this_obj.size()?cur_this_obj.top():0);cur_this_obj.size()?cur_this_obj.pop():void();*curstk=nr,curstk++;
 				for(auto a:freelist)freereg(a);
-				break;
+				BACK;
 			}
 			case RETURN:{
 				ull nr=newreg();
@@ -1147,36 +1200,37 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case JUMP:{
 				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3+offset;
-				break;
+				BACK;
 			}
 			case JUMP_IF_FALSE:{
 				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--;
 				if(!cond)ip+=offset;
-				break;
+				BACK;
 			}
 			case LOOP:{
 				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
 				ip-=1+offset;
-				break;
+				BACK;
 			}
 			case LOADTHIS:{
 				if(this_obj==0)fatal("'this' should not appear in non-objective-functions%c",' ');
 				*curstk=this_obj,curstk++;
-				break;
+				BACK;
 			}
-			case NEWFRAME:newframe();break;
-			case DELFRAME:delframe();break;
+			case NEWFRAME:newframe();BACK;
+			case DELFRAME:delframe();BACK;
 		}
 		ip++;
 	}
+	#undef BACK
 	return 0;
 }
 set<ull> builtin;
