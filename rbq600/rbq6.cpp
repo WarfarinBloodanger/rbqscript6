@@ -63,6 +63,7 @@ const string COPYRIGHT = "See [https://github.com/WarfarinBloodanger/rbqscript6]
 const string CREDITS = "See [https://github.com/WarfarinBloodanger/rbqscript6].";
 const string LICENSE = "See [https://github.com/WarfarinBloodanger/rbqscript6]. GNU 3.0 License is used.";
 #define umap cc_hash_table
+#define double long double
 OPCODE NOP=0x88;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
@@ -135,7 +136,7 @@ const char* tokenname[]={
 	"'+'","'-'","'*'","'/'","'%'","'=='","'!='","'>'","'<'","'>='","'<='",
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
-	"'function'","'if'","'else'","'while'","'return'","'for'","'local'","'break'","'continue'",
+	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
 	"'true'","'false'","'null'","'undefined'","'include'","'this'"
 };
 inline int prior(char tok){
@@ -316,7 +317,7 @@ inline uint getid(const string&s,int lcl=0){
 struct bitparse{
 	union{
 		double x;
-		uchar bits[8];
+		uchar bits[16];
 		ull n;
 	};
 };
@@ -351,9 +352,9 @@ string dec2hex(ull x){
 double str2num(const string&s){
 	double v;stringstream ss("");ss<<s;ss>>v;return v;
 }
-char buf[24];
+char buf[48];
 string num2str(const double&d){
-	sprintf(buf,"%.14g",d);return buf;
+	sprintf(buf,"%.14Lg",d);return buf;
 }
 inline void concat(codeset &a,const codeset &b){
 	for(auto x:b)a.push_back(x);
@@ -362,7 +363,7 @@ codeset compile_num(double x){
 	codeset s;
 	bpser.x=x;
 	s.push_back(LOADNUM);
-	for(int i=0;i<8;i++)s.push_back(bpser.bits[i]);
+	for(int i=0;i<16;i++)s.push_back(bpser.bits[i]);
 	return s;
 }
 inline codeset loadshort(int v){
@@ -370,6 +371,9 @@ inline codeset loadshort(int v){
 } 
 inline codeset loadint(int v){
 	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
+}
+inline codeset loadlong(int v){
+	codeset s;concat(s,loadint(v/0xffffffffull)),concat(s,loadint(v%0xffffffffull));return s;
 }
 long long hex2dec(const string&s);
 string encd(ull v){
@@ -633,7 +637,7 @@ codeset compile(){
 			if(curtok+1<toks.size()&&toks[curtok+1].type==TOK_ID){
 				readtok(TOK_FUNC),concat(s,compile_func()),s.push_back(POP);
 			}
-			else concat(s,parse_expr(0));s.push_back(POP);break;
+			else concat(s,parse_expr(0)),s.push_back(POP);
 			break;
 		}
 		case TOK_BREAK:readtok(TOK_BREAK);concat(s,compile_hold(BREAKHOLDER));break;
@@ -991,6 +995,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	goto DECODE
 	while(ip<len){
 		DECODE:
+		if(ip>=len)break;
 		switch(s[ip]){
 			default:{
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
@@ -999,7 +1004,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			case LOADSTR:{
 				string str="";
 				ip++;
-				uint id=(s[ip]<<24ull)+(s[ip+1]<<16ull)+(s[ip+2]<<8ull)+s[ip+3];
+				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				uchar v=0;
 				while(id--)v=s[ip+1]*0xfu+s[ip+2],ip+=2,str.push_back(v);
@@ -1025,7 +1030,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case LOADVAR:case LOADVARLOCAL:{
 				ip++;
-				uint id=(s[ip]<<24ull)+(s[ip+1]<<16ull)+(s[ip+2]<<8ull)+s[ip+3];
+				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				*curstk=id,curstk++;
 				BACK;
@@ -1046,7 +1051,15 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				bpser.bits[5]=s[ip+5];
 				bpser.bits[6]=s[ip+6];
 				bpser.bits[7]=s[ip+7];
-				ip+=7;
+				bpser.bits[8]=s[ip+8];
+				bpser.bits[9]=s[ip+9];
+				bpser.bits[10]=s[ip+10];
+				bpser.bits[11]=s[ip+11];
+				bpser.bits[12]=s[ip+12];
+				bpser.bits[13]=s[ip+13];
+				bpser.bits[14]=s[ip+14];
+				bpser.bits[15]=s[ip+15];
+				ip+=15;
 				*curstk=newreg();
 				generef(*curstk)=val(bpser.x),curstk++;
 				BACK;
@@ -1081,7 +1094,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			MATH(XOR,^);
 			case AND:{
 				ip++;
-				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if(!cond)ip+=offset;
@@ -1093,7 +1106,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case OR:{
 				ip++;
-				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if(cond)ip+=offset;
@@ -1119,7 +1132,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			#undef UNARY
 			case LOADARR:{
 				ip++;
-				int len=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				int len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				ull loc=allocarr(),nr=newreg();
 				while(len--){
@@ -1132,7 +1145,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case LOADOBJ:{
 				ip++;
-				ull len=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				ull len=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				ull loc=allocarr(),nr=newreg();
 				is_obj[getarrid(loc)]=1;
@@ -1157,16 +1170,16 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case LOADFUNC:{
 				ip++;
-				uint pcnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint pcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=4;
-				uint size=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint size=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=4;
-				uint upvcnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint upvcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=4;
 				ull nr=newreg();
 				vector<int> pid,upvs;codeset instr;
-				while(pcnt--)pid.push_back((s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3]),ip+=4;
-				while(upvcnt--)upvs.push_back((s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3]),ip+=4;
+				while(pcnt--)pid.push_back(s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
+				while(upvcnt--)upvs.push_back(s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3]),ip+=4;
 				while(size--)instr.push_back(s[ip]),ip++;
 				ip--;
 				ull fid=newfunc(pid,instr,upvs);
@@ -1176,7 +1189,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case CALL:{
 				ip++;
-				uint argscnt=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				vector<ull> args,freelist;
 				while(argscnt--){
@@ -1200,13 +1213,13 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case JUMP:{
 				ip++;
-				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3+offset;
 				BACK;
 			}
 			case JUMP_IF_FALSE:{
 				ip++;
-				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				bool cond=generef(*(curstk-1)).is_true();
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
@@ -1216,7 +1229,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			}
 			case LOOP:{
 				ip++;
-				uint offset=(s[ip]<<24ull)^(s[ip+1]<<16ull)^(s[ip+2]<<8ull)^s[ip+3];
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip-=1+offset;
 				BACK;
 			}
@@ -1261,7 +1274,7 @@ namespace file_manager{
 	}
 	void fwrite_string(int handle,string text){check_handle(handle);fprintf(file_ptrs[handle],"%s",text.c_str());fflush(file_ptrs[handle]);}
 	inline double fread_number(int handle){check_handle(handle);return atof(fread_string(handle).c_str());}
-	inline void fwrite_number(int handle,double x){check_handle(handle);fprintf(file_ptrs[handle],"%.14g",x);fflush(file_ptrs[handle]);}
+	inline void fwrite_number(int handle,double x){check_handle(handle);fprintf(file_ptrs[handle],"%.14Lg",x);fflush(file_ptrs[handle]);}
 	inline double read_number(){double d;cin>>d;return d;}
 	inline string read_string(){string s;cin>>s;return s;}
 	inline string read_line(){string s;getline(cin,s);return s;}
@@ -1582,6 +1595,12 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 56:{vector<val> vpr;for(uint i=0;i<args.size();i++)vpr.push_back(arg(i));retv=utils::utf8string(vpr);break;}
 		case 57:for(uint i=0;i<args.size();i++)retv=utils::arrpush(generef(this_obj).num,arg(i));break;
 		case 58:retv=utils::arrpop(generef(this_obj).num);break;
+		case 59:need(1);chktype(0,TNUM);retv=ceil(arg(0).num);break;
+		case 60:need(1);chktype(0,TNUM);retv=floor(arg(0).num);break;
+		case 61:need(1);chktype(0,TNUM);retv=log2(arg(0).num);break;
+		case 62:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=max(retv,arg(i),[](const val&a,const val&b){return (a.smller(b)).is_true();});break;
+		case 63:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=min(retv,arg(i),[](const val&a,const val&b){return (b.smller(a)).is_true();});break;
+		case 64:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=retv+arg(i);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -1663,6 +1682,9 @@ void initvm(){
 	func("type"),func("string"),func("number"),func("dec"),func("hex");
 	func("int_to_str"),func("str_to_int"),func("utf8_string");
 	builtincls(TREF,"push"),builtincls(TREF,"pop");
+	method("ceil"),method("floor"),method("log2");
+	makeobj("Math");
+	func("max"),func("min"),func("sum");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
