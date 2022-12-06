@@ -1,5 +1,6 @@
 #include<bits/stdc++.h>
 using namespace std;
+#define double long double
 typedef uint32_t uint;
 typedef unsigned char uchar;
 typedef unsigned long long ull;
@@ -83,7 +84,7 @@ void outputbc(uint ip,const codeset&s){
 struct bitparse{
 	union{
 		double x;
-		uchar bits[8];
+		uchar bits[16];
 		ull n;
 	};
 };
@@ -99,7 +100,7 @@ string chkid(int id){
 	return builtin[id];
 }
 string num2str(const double&d){
-	sprintf(buf,"%.12g",d);return buf;
+	sprintf(buf,"%.12Lg",d);return buf;
 }
 queue<func> funcq;
 int usedfuncs=1024;
@@ -185,7 +186,15 @@ void runbytes(const codeset&s){
 				bpser.bits[5]=s[ip+5];
 				bpser.bits[6]=s[ip+6];
 				bpser.bits[7]=s[ip+7];
-				ip+=7;
+				bpser.bits[8]=s[ip+8];
+				bpser.bits[9]=s[ip+9];
+				bpser.bits[10]=s[ip+10];
+				bpser.bits[11]=s[ip+11];
+				bpser.bits[12]=s[ip+12];
+				bpser.bits[13]=s[ip+13];
+				bpser.bits[14]=s[ip+14];
+				bpser.bits[15]=s[ip+15];
+				ip+=15;
 				addall();
 				output("LOADNUM",num2str(bpser.x),"");
 				break;
