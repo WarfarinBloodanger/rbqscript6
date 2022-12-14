@@ -117,10 +117,11 @@ OPCODE NEWFRAME=0XE7;
 OPCODE DELFRAME=0XE8;
 OPCODE POP=0XE9;
 OPCODE LOADTHIS=0XEA;
-OPCODE JUMP_IF_TRUE=0XEB;
+OPCODE MAKECLASS=0XEB;
+OPCODE CONSTRUCT=0XEC;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
-OPCODE CTNHOLDER=0XF1; 
+OPCODE CTNHOLDER=0XF1;
 char excpbuf[1024];
 #define fatal(str,...) do{sprintf(excpbuf,str,__VA_ARGS__);throw (string)excpbuf;}while(0)
 typedef vector<uchar> codeset;
@@ -134,7 +135,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW
 };
 const char* tokenname[]={
 	"number","string","identifier","hexnumber",
@@ -142,7 +143,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'"
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'"
 };
 inline int prior(char tok){
 	switch(tok){
@@ -185,6 +186,8 @@ char getidtype(const string&s){
 	if(s=="undefined")return TOK_UNDEFINED;
 	if(s=="include")return TOK_INCLUDE;
 	if(s=="this")return TOK_THIS;
+	if(s=="class")return TOK_CLASS;
+	if(s=="new")return TOK_NEW;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -441,6 +444,7 @@ codeset compile_str(const string&x){
 	return s;
 }
 codeset compile();
+codeset compile_new();
 codeset compile_block(bool a=1);
 codeset compile_upvalue(string);
 codeset parse_args(char,uint&);
@@ -478,9 +482,15 @@ codeset parse_expr(int precd){
 		chklit_strict(TOK_BREAK,"break");
 		chklit_strict(TOK_CTN,"continue");
 		chklit_strict(TOK_INCLUDE,"include");
+		chklit_strict(TOK_CLASS,"class");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
+			break;
+		}
+		case TOK_NEW:{
+			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
+			else concat(s,compile_new());break;
 			break;
 		}
 		case TOK_ID:{
@@ -642,6 +652,7 @@ codeset compile_while();
 codeset compile_for();
 codeset compile_func();
 codeset compile_hold(uchar);
+codeset compile_class();
 codeset compile(){
 	codeset s;
 	switch(tok.type){
@@ -660,6 +671,7 @@ codeset compile(){
 		case TOK_BREAK:readtok(TOK_BREAK);concat(s,compile_hold(BREAKHOLDER));break;
 		case TOK_CTN:readtok(TOK_CTN);concat(s,compile_hold(CTNHOLDER));break;
 		case TOK_VAR:readtok(TOK_VAR),concat(s,parse_decl());break;
+		case TOK_CLASS:readtok(TOK_CLASS),concat(s,compile_class());break;
 		default:concat(s,parse_expr(0));s.push_back(POP);break;
 	}
 	if(tok.type==TOK_FEN)readtok(TOK_FEN);
@@ -764,11 +776,91 @@ codeset compile_func(){
 	s.push_back(ASSIGN);
 	return s;
 }
+codeset compile_method(string&name){
+	codeset s,b1,b2;
+	name=readtok(TOK_ID).val;
+	uint tmp;
+	new_scope();
+	s.push_back(LOADFUNC);
+	readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
+	concat(s,loadint(tmp));
+	readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
+	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
+	concat(s,loadint(b2.size()));
+	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
+	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
+	del_scope();
+	return s;
+}
 codeset compile_hold(uchar h){
 	codeset s;
 	s.push_back(h),s.push_back(h),s.push_back(h),
 	s.push_back(h),s.push_back(h),s.push_back(h),
 	s.push_back(h),s.push_back(h),s.push_back(h);
+	return s;
+}
+codeset compile_new(){
+	readtok(TOK_NEW);
+	codeset s;
+	string name=readtok(TOK_ID).val;
+	int tot=0;
+	readtok(TOK_LPR);
+	while(1){
+		if(tok.type==TOK_ID){
+			string fn=readtok(TOK_ID).val;
+			if(tok.type==TOK_ASS||tok.type==TOK_COL)nexttok();
+			else fatal("expected '=' or ':' after property name in object construction%c",' ');
+			tot++,concat(s,compile_str('"'+fn+'"'));
+			concat(s,parse_expr(0));
+		}
+		else if(tok.type==TOK_FEN||tok.type==TOK_COM)nexttok();
+		else if(tok.type==TOK_RPR){nexttok();break;}
+		else fatal("unexpected '%s' in the construction of object of class '%s'",tokenname[(uint)tok.type],name.c_str());
+	}
+	concat(s,compile_str('"'+name+'"'));
+	s.emplace_back(CONSTRUCT);
+	concat(s,loadint(tot));
+	return s;
+}
+codeset compile_class(){
+	codeset s;
+	string name=readtok(TOK_ID).val,superclass="object";
+	if(tok.type==TOK_COL){
+		readtok(TOK_COL);
+		superclass=readtok(TOK_ID).val;
+	}
+	int tot=0;
+	readtok(TOK_LBR);
+	while(1){
+		if(tok.type==TOK_VAR){
+			readtok(TOK_VAR);
+			while(1){
+				string fn=readtok(TOK_ID).val;
+				tot++,concat(s,compile_str('"'+fn+'"'));
+				if(tok.type==TOK_ASS){
+					readtok(TOK_ASS);
+					concat(s,parse_expr(0));
+				}
+				else s.emplace_back(LOADNULL);
+				if(tok.type==TOK_COM)readtok(TOK_COM);
+				else break;
+			}
+		}
+		else if(tok.type==TOK_FUNC){
+			readtok(TOK_FUNC);
+			string mn;
+			codeset t=compile_method(mn);
+			tot++,concat(s,compile_str('"'+mn+'"'));
+			concat(s,t);
+		}
+		else if(tok.type==TOK_FEN)readtok(TOK_FEN);
+		else if(tok.type==TOK_RBR){readtok(TOK_RBR);break;}
+		else fatal("unexpected '%s' in the definition of class '%s'",tokenname[(uint)tok.type],name.c_str());
+	}
+	concat(s,compile_str('"'+superclass+'"'));
+	concat(s,compile_str('"'+name+'"'));
+	s.push_back(MAKECLASS);
+	concat(s,loadint(tot));
 	return s;
 }
 namespace vm{
@@ -893,6 +985,40 @@ struct val{
 		return makefalse();
 	}
 };
+inline val initarr(const vector<val>&v,const vector<val>&id);
+namespace object_manager{
+	struct class_info{
+		umap<string,val>field;
+		string class_name,super_class;
+	};
+	umap<string,class_info>classes;
+	void make_class(const string&class_name,const string&super_class,const umap<string,val>&field,int chk=1){
+		if(chk&&class_name=="object")fatal("attempting to make class named 'object'%c",' ');
+		if(chk&&classes.find(super_class)==classes.end())fatal("cannot find class '%s'",super_class.c_str());
+		if(chk&&class_name==super_class)fatal("attempting to make class '%s' based on itself",class_name.c_str());
+		const auto&super=classes[super_class];
+		auto&curcl=classes[class_name];
+		curcl.field=super.field;
+		for(const auto&a:field)curcl.field.insert(a);
+		curcl.super_class=super_class;
+		curcl.class_name=class_name;
+	}
+	val construct(const string&class_name,umap<string,val>&values){
+		if(classes.find(class_name)==classes.end())fatal("cannot find class '%s'",class_name.c_str());
+		const auto&curcl=classes[class_name];
+		vector<val> vid,f; 
+		for(auto a:curcl.field){
+			string fn=a.first;
+			val v=a.second;
+			if(values.find(fn)!=values.end())v=values[fn];
+			vid.emplace_back(fn);
+			f.emplace_back(v);
+		}
+		vid.emplace_back("class"),f.emplace_back(class_name);
+		vid.emplace_back("super_class"),f.emplace_back(curcl.super_class);
+		return initarr(f,vid);
+	}
+}
 template <typename T>
 struct pool{
 	vector<T> ctt;
@@ -1269,6 +1395,47 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				if(this_obj==0)fatal("'this' should not appear in non-objective-functions%c",' ');
 				*curstk=this_obj,curstk++;
 				BACK;
+			}
+			case MAKECLASS:{
+				ip++;
+				uint fieldcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				string clsname=generef(*(curstk-1)).str;
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
+				string supname=generef(*(curstk-1)).str;
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
+				umap<string,val>raw;
+				while(fieldcnt--){
+					val v=generef(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+					string key=(generef(*(curstk-1)).str);
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+					raw[key]=v;
+				}
+				object_manager::make_class(clsname,supname,raw);
+				break;
+			}
+			case CONSTRUCT:{
+				ip++;
+				uint fieldcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				string clsname=generef(*(curstk-1)).str;
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
+				umap<string,val>raw;
+				while(fieldcnt--){
+					val v=generef(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+					string key=(generef(*(curstk-1)).str);
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+					curstk--;
+					raw[key]=v;
+				}
+				*curstk=newreg();
+				generef(*curstk)=object_manager::construct(clsname,raw),curstk++;
+				break;
 			}
 			case NEWFRAME:newframe();BACK;
 			case DELFRAME:delframe();BACK;
@@ -1665,6 +1832,11 @@ inline val initarr(const string&name,const vector<val>&v,const vector<val>&id){
 	generef(getid(name))=vr;
 	return vr;
 }
+inline val initarr(const vector<val>&v,const vector<val>&id){
+	val vr=val(allocarr(),TREF);
+	for(uint i=0;i<v.size();i++)generef(getaddr(vr,id[i]))=v[i],mdfaddr(getaddr(vr,id[i]));
+	return vr;
+}
 vector<val> cmdargs;
 umap<string,vector<val>>clsvt;
 umap<string,vector<val>>clsvr;
@@ -1720,6 +1892,7 @@ void initvm(){
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
+	object_manager::make_class("object","object",umap<string,val>(),0);
 	#undef func
 	#undef method
 	#undef makeobj
