@@ -106,6 +106,8 @@ OPCODE LSHF=0XD5;
 OPCODE RSHF=0XD6;
 OPCODE NOT=0XD7;
 OPCODE BITNOT=0XD8;
+OPCODE HAS=0XD9;
+OPCODE TYPEOF=0XDA;
 OPCODE JUMP=0XE0;
 OPCODE JUMP_IF_FALSE=0XE1;
 OPCODE LOOP=0XE2;
@@ -135,7 +137,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF
 };
 const char* tokenname[]={
 	"number","string","identifier","hexnumber",
@@ -143,7 +145,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'"
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'"
 };
 inline int prior(char tok){
 	switch(tok){
@@ -155,7 +157,7 @@ inline int prior(char tok){
 		case TOK_XOR:return 60;
 		case TOK_BITAND:return 70;
 		case TOK_EQL:case TOK_NEQ:return 80;
-		case TOK_LE:case TOK_SML:case TOK_GE:case TOK_BIG:return 90;
+		case TOK_LE:case TOK_SML:case TOK_GE:case TOK_BIG:case TOK_HAS:case TOK_TYPEOF:return 90;
 		case TOK_LSHF:case TOK_RSHF:return 100;
 		case TOK_ADD:case TOK_SUB:return 110;
 		case TOK_MUL:case TOK_DIV:case TOK_MOD:return 120;
@@ -188,6 +190,8 @@ char getidtype(const string&s){
 	if(s=="this")return TOK_THIS;
 	if(s=="class")return TOK_CLASS;
 	if(s=="new")return TOK_NEW;
+	if(s=="has")return TOK_HAS;
+	if(s=="typeof")return TOK_TYPEOF;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -483,6 +487,7 @@ codeset parse_expr(int precd){
 		chklit_strict(TOK_CTN,"continue");
 		chklit_strict(TOK_INCLUDE,"include");
 		chklit_strict(TOK_CLASS,"class");
+		chklit_strict(TOK_HAS,"has");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
@@ -496,6 +501,11 @@ codeset parse_expr(int precd){
 		case TOK_ID:{
 			if(liter)concat(s,compile_str('"'+tok.val+'"')),readtok(TOK_ID),s.push_back(GETADDR);
 			else s.push_back(LOADVAR),concat(s,loadint(getid(tok.val))),readtok(TOK_ID);
+			break;
+		}
+		case TOK_TYPEOF:{
+			if(liter)concat(s,compile_str('"'+tok.val+'"')),readtok(TOK_TYPEOF),s.push_back(GETADDR);
+			else readtok(TOK_TYPEOF);concat(s,parse_expr(90));s.push_back(TYPEOF);break;
 			break;
 		}
 		case TOK_NUM:concat(s,compile_num(str2num(tok.val)));readtok(TOK_NUM);break;
@@ -565,6 +575,7 @@ codeset parse_expr(int precd){
 			case TOK_XOR:PF(XOR);
 			case TOK_EQL:PF(EQL);
 			case TOK_NEQ:PF(NEQ);
+			case TOK_HAS:PF(HAS);
 			case TOK_BIG:PF(BIG);
 			case TOK_GE:PF(GE);
 			case TOK_SML:PF(SML);
@@ -1106,6 +1117,15 @@ inline void mdfaddr(ull addr,int del=0){
 		if(!is_obj[id])arrlens[id]=arrlens[id]-1;
 	}
 }
+inline val hasfield(const val&obj,const val&key){
+	if(obj.type!=TREF)return val(0,TTRUE);
+	ull addr;
+	if(key.type==TNUM)addr=obj.num+key.num;
+	else if(key.type==TSTR)addr=obj.num+getkeyhash(key.str);
+	else return val(0,TFALSE);
+	ull id=getarrid(addr);
+	return val(0,indices[id].find(addr)!=indices[id].end()?TTRUE:TFALSE);
+}
 umap<char,umap<string,ull>> builtinmethod;
 inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
@@ -1128,7 +1148,7 @@ inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&u
 	for(auto a:upvs)upvalueframe[usedfuncs][a]=generef(a);
 	return usedfuncs;
 }
-int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
+ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
 int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 	uint ip=0,len=s.size();
 	runstack curstk=stk_start;
@@ -1245,6 +1265,13 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			MATH(GE,>=);
 			MATH(SML,<);
 			MATH(LE,<=);
+			case HAS:{
+				uint nr=newreg();
+				generef(nr)=hasfield(generef(*(curstk-2)),generef(*(curstk-1)));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				curstk--,*(curstk-1)=nr;
+				BACK;
+			}
 			MATH(BITAND,&);
 			MATH(BITOR,|);
 			MATH(LSHF,<<);
@@ -1287,6 +1314,13 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			UNARY(BITNOT,~);
 			UNARY(POSITIVE,+);
 			UNARY(NEGATIVE,-);
+			case TYPEOF:{
+				uint nr=newreg();
+				generef(nr)=generef(*(curstk-1)).tostr();
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				*(curstk-1)=nr;
+				BACK;
+			}
 			#undef UNARY
 			case LOADARR:{
 				ip++;
@@ -1666,10 +1700,15 @@ namespace utils{
 	}
 }
 set<ull>stringing;
+ull inner_stack[RUNSTACK_SIZE/32];
 inline string ref2string(ull ref){
 	ull id=getarrid(ref);
 	stringstream ret("");
 	if(is_obj[id]){
+		if(hasfield(val(ref,TREF),val("to_str")).is_true()){
+			ull nr=newreg();generef(nr)=val(ref,TREF);
+			return generef(call_func(generef(getaddr(val(ref,TREF),val("to_str"))).num,vector<ull>(),inner_stack,nr)).tostr();
+		}
 		if(stringing.count(ref))return "{...}";
 		stringing.insert(ref);
 		ret<<"{";
@@ -1805,7 +1844,7 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 	int nr=newreg();generef(nr)=retv;
 	return nr;
 }
-inline int call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj){
+inline ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj){
 	if(builtin.find(fid)!=builtin.end())return call_builtin(fid,args,this_obj);
 	const vector<int> &pid=functable[fid].pid;
 	if(functable[fid].pid.size()<args.size())fatal("function at %d needs at most %lld argument(s), %lld given",fid,functable[fid].pid.size(),args.size());
