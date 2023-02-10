@@ -1,4 +1,4 @@
-## 值与变量
+# 值与变量
 
 RBQScript 是一门动态类型的语言，变量无类型，值才有类型。不会限制所保存的值类型。
 
@@ -14,7 +14,9 @@ RBQScript 是一门动态类型的语言，变量无类型，值才有类型。�
 - 未定义（undefined）：代表未初始化的内存（如：未声明的变量、未赋初值的数组 / 对象元素等）；
 - 空值（null）：表示空，不同于 undefined。
 
-## 基本语法
+# 基本语法
+
+## 运算符
 
 RBQScript 支持一系列运算符。
 
@@ -33,10 +35,46 @@ RBQScript 支持一系列运算符。
 - - `()` 函数调用，语法为 `func(arg1,arg2,...)`。
 - **赋值运算符**，这些运算符可以修改左值指向的地址 / 变量：
 - - `=` 赋值，直接将右边的值赋给左值指向的地址 / 变量；
-- - 此外包括 `+=`、`-=` 等运算符，`left+=value` 的功能相当于 `left=left+value`。
+- - 此外包括 `+=`、`-=` 等带操作的赋值运算符。例如：`left+=value` 的功能相当于 `left=left+value`。
+- - 支持带操作的赋值运算符有：`+= -= *= /= %= <<= >>= &= |= ^=`。
 - **功能运算符**，这些运算符拥有特定的功能：
 - - `typeof` 取类型，语法为 `typeof value`，将会用字符串形式返回 `value` 的类型信息。
 - - `has` 判断存在，语法为 `value_set has value`，判断 `value_set` 中是否包含 `value` 这个值，以 `true` 或 `false` 返回结果。
 - - `new` 构造对象，语法为 `new Class(field1=value1,field2=value2...)`。具体行为将在本文档的对应小节表述。
-- 
-### 
+
+## 控制流
+
+### if 语句
+
+if 语句根据条件选择要执行的代码分支。格式如下：
+
+```
+if(condition)
+  true branch
+else
+  false branch
+```
+
+当 condition 为 true（或可以转化为 true 的值）时，将会跳转到 true branch 进行执行；否则将执行 false branch。
+
+当任意一个 branch 具有多条语句的时候，需要使用大括号将多条语句括起来。
+
+```
+if(condition){
+  true block
+}
+else{
+  false block
+}
+```
+
+RBQScript 支持 if-else-if 结构，即以下代码是合法的：
+
+```
+if(condition1) branch1
+else if(condition2) branch2
+else ...
+```
+
+
+RBQScript 支持
