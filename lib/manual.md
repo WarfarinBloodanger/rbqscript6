@@ -55,7 +55,7 @@ else
   false branch
 ```
 
-当 condition 为 true（或可以转化为 true 的值）时，将会跳转到 true branch 进行执行；否则将执行 false branch。
+当 condition 为 true（或可以转化为 true 的值）时，将会跳转到 true branch 执行；否则将执行 false branch。
 
 当任意一个 branch 具有多条语句的时候，需要使用大括号将多条语句括起来。
 
@@ -76,5 +76,141 @@ else if(condition2) branch2
 else ...
 ```
 
+在 RBQScript 中，if 将匹配最近的 else，不存在空悬 else 问题。如下代码：
 
-RBQScript 支持
+```
+if(condition1)
+  if(condition2) branch2
+else branch3
+```
+
+其本质上是：
+
+```
+if(condition1) {
+  if(condition2) branch2
+else branch3
+}
+```
+
+例如如下代码：
+
+```
+if(5+3>9) Console.print('A')
+else if(5+3>8) Console.print('B')
+else Console.print('C')
+```
+
+这段代码将会输出 `C`。
+
+我们建议显式使用大括号来明确各分支的范围，避免出现 else 从句从属关系不明朗而导致的代码理解上的问题。
+
+### while 语句
+
+while 语句会进行循环，其格式如下：
+
+```
+while(condition) loop_body
+```
+
+这段代码将会不断循环执行 loop_body 中的内容，一直到 condition 不为 true（或者其他可以转化为 true 的值）。如果 loop_body 中包含超过一条语句，那么请使用大括号将其括起来。
+
+例如如下代码：
+
+```
+i=0
+while(i<3){
+  Console.print('i =',i)
+  i+=1
+}
+```
+
+这段代码将会输出：
+
+```
+0
+1
+2
+```
+
+### for 语句
+
+for 语句也提供了循环功能，其格式如下：
+
+```
+for(statement1; condition; statement2) loop_body
+```
+
+这段代码将会首先执行 statement1，然后不断循环执行 loop_body，每执行一次 loop_body 就执行一次 statement2，一直到 condition 不为 true（或者其他可以转化为 true 的值）。如果 loop_body 中包含超过一条语句，那么请使用大括号将其括起来。
+
+严格地讲，以上代码和下面的 while 循环是等价的：
+
+```
+statement1
+while(condition) {
+  loop_body
+  statement2
+}
+```
+
+例如如下代码：
+
+```
+for(i=0;i<3;i+=1) Console.print(i)
+```
+
+这段代码将会输出：
+
+```
+0
+1
+2
+```
+
+### break 语句
+
+break 语句提供了从循环体内部直接跳出循环体的功能，它只应当出现在一个循环当中。
+
+```
+for(i=0;i<10;i+=2){
+  Console.print(i)
+  if(i==6) break
+}
+Console.print('Out of loop')
+```
+
+这段代码将会输出：
+
+```
+0
+2
+4
+6
+Out of loop
+```
+
+当变量 `i` 的值等于 6 时，执行到 break 语句，退出了循环。
+
+### continue 语句
+
+continue 语句提供了从循环体内部直接执行下一轮循环的功能，它只应当出现在一个循环当中。
+
+```
+for(i=0;i<10;i+=2){
+  if(i==6) continue
+  Console.print(i)
+}
+```
+
+这段代码将会输出：
+
+```
+0
+2
+4
+8
+```
+
+当变量 `i` 的值等于 6 时，执行到 continue 语句，此时不执行接下来的输出语句。
+
+请注意区分 break 和 continue 的功能差异。break 语句是直接**跳出循环体**，而 continue 语句是**跳过当前当次循环内剩余的所有语句，并开始新一轮循环**。
