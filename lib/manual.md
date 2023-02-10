@@ -214,3 +214,119 @@ for(i=0;i<10;i+=2){
 当变量 `i` 的值等于 6 时，执行到 continue 语句，此时不执行接下来的输出语句。
 
 请注意区分 break 和 continue 的功能差异。break 语句是直接**跳出循环体**，而 continue 语句是**跳过当前当次循环内剩余的所有语句，并开始新一轮循环**。
+
+## 函数
+
+### 函数定义
+
+RBQScript 提供了函数定义的语法，其格式如下：
+
+```
+function function_name(arg1,arg2,...){
+  block
+}
+```
+
+例如：
+
+```
+function my_func(a,b){
+
+}
+```
+
+这段代码将会定义一个函数 `my_func`，它拥有 2 个参数，分别为 `a` 和 `b`。
+
+### 函数返回值
+
+函数可以拥有返回值，使用 `return` 语句返回值，当函数执行到 return 语句时将会直接中断流程退出。其格式如下：
+
+```
+return value
+```
+
+其中，返回值 `value` 是可选的。如果没有返回值，那么**必须在 return 后面带上一个分号**，即 `return;`。
+- 函数如果通过带返回值的 `return value` 语句返回，则返回值为 `value`；
+- 函数如果通过不带返回值的 `return;` 语句返回，则返回值为 null；
+- **没有通过 return 退出的函数返回 undefined**。
+
+例如：
+
+```
+function test(a){
+  if(a<0)return;
+  if(a>0)return a+9
+}
+Console.print(test(-1),test(0),test(1))
+```
+
+这段代码将会输出：
+
+```
+null undefined 10
+```
+
+参数为 -1 时函数通过不带返回值的 `return` 语句返回，返回值为 null；参数为 0 时函数自然结束，返回值为 undefined；参数为 1 时函数通过 `return a*a` 语句返回，返回值即为 10。
+
+
+### 匿名函数
+
+当您有时候需要一个函数但是只需要用到一次时，您可以使用匿名函数来更简单地完成这项工作。其语法如下：
+
+```
+function(arg1,arg2,...){block}
+```
+
+事实上，下面两段代码是等价的：
+
+```
+function f(){}
+f=function(){}
+```
+
+例如：
+
+```
+a=function(x){return x*x}
+Console.print(a(5))
+```
+
+将会输出 `25`。
+
+### 高阶函数
+
+RBQScript 支持将函数作为返回值返回，并且支持 upvalue 机制（即闭包），如下：
+
+```
+function line(k,b){
+  return function(x){return k*x+b}
+}
+Console.print(line(2,3)(1))
+Console.print(line(-1,1.5)(0.8))
+```
+
+这段代码将会输出：
+
+```
+5
+0.7
+```
+
+可以看到，返回的函数在 upvalue 机制下**互不干扰**。
+
+RBQScript 也支持将函数作为参数传给另一个函数，如下：
+
+```
+function hello(v){
+  v('Hello')
+}
+hello(function(x){ Console.print(x) })
+```
+
+这段代码将会输出：
+
+```
+Hello
+```
+
+一个匿名函数被当做参数传给了 `hello` 函数。`hello` 函数将会尝试用参数 `'Hello'` 调用它所得到的参数，于是该匿名函数被执行，输出字符串。
