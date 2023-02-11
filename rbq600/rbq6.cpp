@@ -97,6 +97,16 @@ OPCODE SML=0XCB;
 OPCODE LE=0XCC;
 OPCODE POSITIVE=0XCD;
 OPCODE NEGATIVE=0XCE;
+OPCODE ADDE=0XB0;
+OPCODE SUBE=0XB1;
+OPCODE MULE=0XB2;
+OPCODE DIVE=0XB3;
+OPCODE MODE=0XB4;
+OPCODE LSHFE=0XB5;
+OPCODE RSHFE=0XB6;
+OPCODE BITORE=0XB7;
+OPCODE BITANDE=0XB8;
+OPCODE XORE=0XB9;
 OPCODE ADD=0XD0;
 OPCODE SUB=0XD1;
 OPCODE MUL=0XD2;
@@ -108,6 +118,7 @@ OPCODE NOT=0XD7;
 OPCODE BITNOT=0XD8;
 OPCODE HAS=0XD9;
 OPCODE TYPEOF=0XDA;
+OPCODE CHOOSE=0XDB;
 OPCODE JUMP=0XE0;
 OPCODE JUMP_IF_FALSE=0XE1;
 OPCODE LOOP=0XE2;
@@ -121,6 +132,7 @@ OPCODE POP=0XE9;
 OPCODE LOADTHIS=0XEA;
 OPCODE MAKECLASS=0XEB;
 OPCODE CONSTRUCT=0XEC;
+OPCODE DUP=0XED;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1;
@@ -137,7 +149,10 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,
+	TOK_ADDE,TOK_SUBE,
+	TOK_MULE,TOK_DIVE,TOK_MODE,
+	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,
 };
 const char* tokenname[]={
 	"number","string","identifier","hexnumber",
@@ -145,12 +160,19 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'"
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'",
+	"+=","-=",
+	"*=","/=","%=",
+	"&=","|=","^=","<<=",">>="
 };
 inline int prior(char tok){
 	switch(tok){
 		case TOK_COM:return 10;
-		case TOK_ASS:return 20;
+		case TOK_ASS:
+		case TOK_ADDE:case TOK_SUBE:case TOK_MULE:case TOK_DIVE:case TOK_MODE:
+		case TOK_BITANDE:case TOK_BITORE:case TOK_XORE:case TOK_LSHFE:case TOK_RSHFE:return 20;
+		case TOK_CHOOSE:return 24;
+		case TOK_QUEZ:return 25;
 		case TOK_OR:return 30;
 		case TOK_AND:return 40;
 		case TOK_BITOR:return 50;
@@ -192,6 +214,7 @@ char getidtype(const string&s){
 	if(s=="new")return TOK_NEW;
 	if(s=="has")return TOK_HAS;
 	if(s=="typeof")return TOK_TYPEOF;
+	if(s=="or")return TOK_CHOOSE;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -236,12 +259,21 @@ void tokenize(char *src){
 			cur.type=TOK_STR,toks.push_back(cur);
 		}
 		else if(isspace(src[loc]))(chkln,loc++,loc-1);
+		#define checkeql_(tokname)\
+			if(loc<len&&src[loc]=='=')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_##tokname##E;
+		#define checkeql(tokname)\
+		{\
+			cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_##tokname;\
+			checkeql_(tokname);\
+			toks.push_back(cur);\
+			break;\
+		}
 		else switch(src[loc]){
-			case('+'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_ADD,toks.push_back(cur);break;
-			case('-'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_SUB,toks.push_back(cur);break;
-			case('*'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_MUL,toks.push_back(cur);break;
-			case('/'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_DIV,toks.push_back(cur);break;
-			case('%'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_MOD,toks.push_back(cur);break;
+			case('+'):checkeql(ADD);
+			case('-'):checkeql(SUB);
+			case('*'):checkeql(MUL);
+			case('/'):checkeql(DIV);
+			case('%'):checkeql(MOD);
 			case('.'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_DOT,toks.push_back(cur);break;
 			case('('):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LPR,toks.push_back(cur);break;
 			case('['):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LBK,toks.push_back(cur);break;
@@ -249,7 +281,7 @@ void tokenize(char *src){
 			case(')'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_RPR,toks.push_back(cur);break;
 			case(']'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_RBK,toks.push_back(cur);break;
 			case('}'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_RBR,toks.push_back(cur);break;
-			case('^'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_XOR,toks.push_back(cur);break;
+			case('^'):checkeql(XOR);
 			case(';'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_FEN,toks.push_back(cur);break;
 			case(','):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_COM,toks.push_back(cur);break;
 			case(':'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_COL,toks.push_back(cur);break;
@@ -264,7 +296,10 @@ void tokenize(char *src){
 			case('>'):{
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				if(loc<len&&src[loc]=='=')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_GE;
-				else if(loc<len&&src[loc]=='>')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_RSHF;
+				else if(loc<len&&src[loc]=='>'){
+					cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_RSHF;
+					checkeql_(RSHF);
+				}
 				else cur.type=TOK_BIG;
 				toks.push_back(cur);
 				break;
@@ -272,7 +307,10 @@ void tokenize(char *src){
 			case('<'):{
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				if(loc<len&&src[loc]=='=')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LE;
-				else if(loc<len&&src[loc]=='<')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LSHF;
+				else if(loc<len&&src[loc]=='<'){
+					cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LSHF;
+					checkeql_(LSHF);
+				}
 				else cur.type=TOK_SML;
 				toks.push_back(cur);
 				break;
@@ -287,14 +325,20 @@ void tokenize(char *src){
 			case('&'):{
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				if(loc<len&&src[loc]=='&')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_AND;
-				else cur.type=TOK_BITAND;
+				else{
+					cur.type=TOK_BITAND;
+					checkeql_(BITAND);
+				}
 				toks.push_back(cur);
 				break;
 			}
 			case('|'):{
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				if(loc<len&&src[loc]=='|')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_OR;
-				else cur.type=TOK_BITOR;
+				else{
+					cur.type=TOK_BITOR;
+					checkeql_(BITOR);
+				}
 				toks.push_back(cur);
 				break;
 			}
@@ -543,15 +587,28 @@ codeset parse_expr(int precd){
 		int pr;string v;
 		switch(tok.type){
 			case TOK_ASS:PF(ASSIGN);
+			case TOK_ADDE:PF(ADDE);
+			case TOK_SUBE:PF(SUBE);
+			case TOK_MULE:PF(MULE);
+			case TOK_DIVE:PF(DIVE);
+			case TOK_MODE:PF(MODE);
+			case TOK_XORE:PF(XORE);
+			case TOK_LSHFE:PF(LSHFE);
+			case TOK_RSHFE:PF(RSHFE);
+			case TOK_BITANDE:PF(BITANDE);
+			case TOK_BITORE:PF(BITORE);
+			case TOK_CHOOSE:PF(CHOOSE);
 			case TOK_QUEZ:{
 				readtok(TOK_QUEZ);
 				b1=parse_expr(prior(TOK_QUEZ));
 				readtok(TOK_COL);
 				b2=parse_expr(prior(TOK_QUEZ));
 				s.push_back(JUMP_IF_FALSE);
-				concat(s,loadint(b1.size()));
+				concat(s,loadint(b1.size()+5));
+				concat(s,b1);
 				s.push_back(JUMP);
 				concat(s,loadint(b2.size()));
+				concat(s,b2);
 				break;
 			}
 			case TOK_OR:{
@@ -670,7 +727,11 @@ codeset compile(){
 		case TOK_IF:readtok(TOK_IF);concat(s,compile_if());break; 
 		case TOK_LBR:readtok(TOK_LBR);concat(s,compile_block());readtok(TOK_RBR);break;
 		case TOK_WHILE:readtok(TOK_WHILE);concat(s,compile_while());break;
-		case TOK_RET:readtok(TOK_RET);concat(s,parse_expr(0));s.push_back(RETURN);break;
+		case TOK_RET:readtok(TOK_RET);{
+			if(tok.type==TOK_FEN)s.push_back(LOADNULL);
+			else concat(s,parse_expr(0));
+			s.push_back(RETURN);break;
+		}
 		case TOK_FOR:readtok(TOK_FOR);concat(s,compile_for());break;
 		case TOK_FUNC:{
 			if(curtok+1<toks.size()&&toks[curtok+1].type==TOK_ID){
@@ -688,7 +749,7 @@ codeset compile(){
 	if(tok.type==TOK_FEN)readtok(TOK_FEN);
 	return s;
 }
-void fillholder(codeset&s,const uint&led){
+void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 	codeset b;
 	for(uint i=0;i+8<s.size();i++){
 		if(
@@ -696,7 +757,7 @@ void fillholder(codeset&s,const uint&led){
 			s[i+3]==BREAKHOLDER&&s[i+4]==BREAKHOLDER&&s[i+5]==BREAKHOLDER&&
 			s[i+6]==BREAKHOLDER&&s[i+7]==BREAKHOLDER&&s[i+8]==BREAKHOLDER
 		){
-			uint offset=s.size()-i-5;
+			uint offset=bsize-i+stepsize;
 			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
 			s[i+5]=NOP,s[i+6]=NOP,s[i+7]=NOP,s[i+8]=NOP;
@@ -706,8 +767,8 @@ void fillholder(codeset&s,const uint&led){
 			s[i+3]==CTNHOLDER&&s[i+4]==CTNHOLDER&&s[i+5]==CTNHOLDER&&
 			s[i+6]==CTNHOLDER&&s[i+7]==CTNHOLDER&&s[i+8]==CTNHOLDER
 		){
-			uint offset=i+1;
-			s[i]=LOOP,b=loadint(offset);
+			uint offset=bsize-i-5;
+			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
 			s[i+5]=NOP,s[i+6]=NOP,s[i+7]=NOP,s[i+8]=NOP;
 		}
@@ -741,7 +802,7 @@ codeset compile_while(){
 	concat(b,loadint(b.size()+s.size()+4));//IMPORTANT
 	concat(s,loadint(b.size()));
 	concat(s,b);
-	fillholder(s,b.size());
+	fillholder(s,b.size(),0);
 	return s;
 }
 codeset compile_for(){
@@ -754,13 +815,15 @@ codeset compile_for(){
 	readtok(TOK_RPR);
 	codeset b=compile();
 	concat(s,expr);
+	uint stepsize=step.size();
+	uint bsize=b.size();
 	s.push_back(JUMP_IF_FALSE);
 	concat(b,step);
 	b.push_back(LOOP);
 	concat(b,loadint(b.size()+expr.size()+5));//IMPORTANT
+	fillholder(b,bsize,stepsize);
 	concat(s,loadint(b.size()));
 	concat(s,b); 
-	fillholder(s,b.size());
 	return s;
 }
 codeset compile_upvalue(string fid){
@@ -899,7 +962,7 @@ struct val{
 			case TSTR:return strict?strictstr(str):str;
 			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
 			case TREF:return ref2string((ull)num);
-			case TFUNC:return "<func "+num2str(num)+">";
+			case TFUNC:return "<function "+num2str(num)+">";
 			case TNULL:return "null";
 			case TUNDEF:return "undefined";
 		}
@@ -995,6 +1058,7 @@ struct val{
 		}
 		return makefalse();
 	}
+	val choose(const val&v)const{return type==TUNDEF||type==TNULL?v:(*this);}
 };
 inline val initarr(const vector<val>&v,const vector<val>&id);
 namespace object_manager{
@@ -1204,6 +1268,23 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				curstk--;
 				BACK;
 			}
+			#define assigner(tokname,op)\
+			case tokname:{\
+				generef(*(curstk-2),0)=generef(*(curstk-2),0) op generef(*(curstk-1)),mdfaddr(*(curstk-2));\
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));\
+				curstk--;\
+				BACK;\
+			}
+			assigner(ADDE,+)
+			assigner(SUBE,-)
+			assigner(MULE,*)
+			assigner(DIVE,/)
+			assigner(MODE,%)
+			assigner(XORE,^)
+			assigner(BITANDE,&)
+			assigner(BITORE,|)
+			assigner(LSHFE,<<)
+			assigner(RSHFE,>>)
 			case LOADNUM:{
 				ip++;
 				bpser8.bits[0]=s[ip];
@@ -1268,6 +1349,13 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			case HAS:{
 				uint nr=newreg();
 				generef(nr)=hasfield(generef(*(curstk-2)),generef(*(curstk-1)));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				curstk--,*(curstk-1)=nr;
+				BACK;
+			}
+			case CHOOSE:{
+				uint nr=newreg();
+				generef(nr)=generef(*(curstk-2)).choose(generef(*(curstk-1)));
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				BACK;
