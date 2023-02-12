@@ -121,6 +121,31 @@ obj.index.index2
 
 访问不存在的键值将会返回 undefined。
 
+
+### 引用
+
+如上，数组和对象都属于引用，因此变量直接赋值的时候，只是把**引用**赋值给了新的变量，如下：
+
+```
+a=[1,2,3]
+b=a
+b[0]='test'
+Console.print(a[0])
+```
+
+这段代码将会输出 `test` 字符串。原因在于：变量 `b` 经过直接赋值之后，指向的是和 `a` 同样的一个数组，因此对 `b` 的修改就会导致 `a` 也跟着改变。
+
+同样的，对象也是引用：
+
+```
+obj={'a':0}
+obj2=obj
+obj2.a=10
+Console.print(obj.a)
+```
+
+这段代码将会输出 `10`。原因在于：原因在于：变量 `obj2` 经过直接赋值之后，指向的是和 `obj` 同样的一个对象，因此对 `obj2` 的修改就会导致 `obj` 也跟着改变。
+
 ### 真 / 假
 
 RBQScript 里提供了 `true` 和 `false` 两个关键字来指代真和假两个布尔值。
@@ -180,6 +205,7 @@ RBQScript 支持一系列运算符。
 - `&& ||` 逻辑运算符是短路运算符。`&&` 返回的是两个运算数中为 `false` 的那一个（两个都为 `false` 返回第一个），`||` 返回的是两个运算符中为 `true` 的那一个（两个都为 `true` 返回第一个）；
 - `or` **不进行短路运算**。它与 `||` 的区别在于：0 对于 `or` 来说是真值。`0 or 3` 将会返回 0，而 `0 || 3` 将会返回 3。
 - 位运算符将会把实数转化为 64 位长整型进行计算，比如 `3.5 & 1` 实际将会被转化为 `3 & 1`。
+- `has` 运算符检查的是值而不是键。比如 `{'test':3} has 3` 返回 `true`，而 `{'test':3} has 'test'` 返回 false。
 
 ## 控制流
 
@@ -469,3 +495,69 @@ Hello
 ```
 
 一个匿名函数被当做参数传给了 `hello` 函数。`hello` 函数将会尝试用参数 `'Hello'` 调用它所得到的参数，于是该匿名函数被执行，输出字符串。
+
+
+## 类与对象
+
+### 类定义
+
+为了支持 OOP（面向对象编程），RBQScript 提供类的概念。类的定义如下：
+
+```
+class name [: superclass] {
+  var field1
+  var field2
+  ...
+  function method1(){}
+  function method2(){}
+  ...
+}
+```
+
+其中，`: superclass` 用于表示该类继承自哪个超类。子类将会继承超类中所有的字段以及方法。如下是一些例子：
+
+```
+class person { var name }
+class student : person { var major }
+```
+
+在这个例子里，`person` 类拥有一个字段：`name`；`student` 类继承了 `person` 类，将会拥有两个字段：`name` 和 `major`。
+
+### 构造对象
+
+RBQScript 提供 `new` 作为构造对象的标识符。其格式为：
+
+```
+new name(field1=value1, field2=value2, ...)
+```
+
+以上一小节 `student` 的例子为基础，下面是一些构造的例子：
+
+```
+new student()
+new student(name='Alice',major='Math')
+new student(name='Bob')
+```
+
+第一行构造了一个 `student` 对象，它的一切字段都是未初始化的值（即默认值 undefined）；第二行构造了一个 `name` 为 `'Alice'`、`major` 为 `'Math'` 的 `student` 对象。以此类推。
+
+
+### 方法内访问字段
+
+为了避免外围变量名与对象内字段冲突的问题，RBQScript 提供了 `this` 关键字以帮助区分。如果使用了 `this` 关键字，将会访问自身的字段。如下代码：
+
+```
+x=5
+class foo{
+  var x
+  function look(){
+    Console.print(x,this.x)
+  }
+}
+f=new foo(x=10)
+f.look()
+```
+
+运行以上代码将会输出 `5 10`。原因在于第一个 `x` 访问到的是外围的变量 `x`，即 5；而第二个 `this.x` 访问到的是自身的 `x` 字段，即 10。
+
+
