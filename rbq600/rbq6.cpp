@@ -119,6 +119,7 @@ OPCODE BITNOT=0XD8;
 OPCODE HAS=0XD9;
 OPCODE TYPEOF=0XDA;
 OPCODE CHOOSE=0XDB;
+OPCODE ISA=0XDC;
 OPCODE JUMP=0XE0;
 OPCODE JUMP_IF_FALSE=0XE1;
 OPCODE LOOP=0XE2;
@@ -132,7 +133,7 @@ OPCODE POP=0XE9;
 OPCODE LOADTHIS=0XEA;
 OPCODE MAKECLASS=0XEB;
 OPCODE CONSTRUCT=0XEC;
-OPCODE DUP=0XED;
+OPCODE CHECKTYPE=0xED;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1;
@@ -149,7 +150,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,
 	TOK_ADDE,TOK_SUBE,
 	TOK_MULE,TOK_DIVE,TOK_MODE,
 	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,
@@ -160,7 +161,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'",
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'",
 	"+=","-=",
 	"*=","/=","%=",
 	"&=","|=","^=","<<=",">>="
@@ -179,7 +180,7 @@ inline int prior(char tok){
 		case TOK_XOR:return 60;
 		case TOK_BITAND:return 70;
 		case TOK_EQL:case TOK_NEQ:return 80;
-		case TOK_LE:case TOK_SML:case TOK_GE:case TOK_BIG:case TOK_HAS:case TOK_TYPEOF:return 90;
+		case TOK_LE:case TOK_SML:case TOK_GE:case TOK_BIG:case TOK_HAS:case TOK_TYPEOF:case TOK_IS:return 90;
 		case TOK_LSHF:case TOK_RSHF:return 100;
 		case TOK_ADD:case TOK_SUB:return 110;
 		case TOK_MUL:case TOK_DIV:case TOK_MOD:return 120;
@@ -215,6 +216,7 @@ char getidtype(const string&s){
 	if(s=="has")return TOK_HAS;
 	if(s=="typeof")return TOK_TYPEOF;
 	if(s=="or")return TOK_CHOOSE;
+	if(s=="is")return TOK_IS;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -491,18 +493,23 @@ codeset compile_str(const string&x){
 	s[1]=b[0],s[2]=b[1],s[3]=b[2],s[4]=b[3];
 	return s;
 }
+inline codeset checktype(int num,const string&type){
+	codeset s;
+	if(type!="any")s=compile_str(type),s.push_back(CHECKTYPE),concat(s,loadshort(num));
+	return s;
+}
 codeset compile();
 codeset compile_new();
 codeset compile_block(bool a=1);
 codeset compile_upvalue(string);
 codeset parse_args(char,uint&);
-codeset parse_params(uint&);
+codeset parse_params(uint&,codeset&);
 codeset parse_decl();
 codeset parse_obj();
 int anfunc=0;
 inline string anonyfunc(){return "$"+num2str(++anfunc);}
 codeset parse_expr(int precd){
-	codeset s,b1,b2;uint tmp;bool liter=precd==prior(TOK_DOT)&&(curtok-1>=0&&toks[curtok-1].type==TOK_DOT);
+	codeset s,b1,b2,pc;uint tmp;bool liter=precd==prior(TOK_DOT)&&(curtok-1>=0&&toks[curtok-1].type==TOK_DOT);
 	switch(tok.type){
 		case TOK_FEN:nexttok();return s; 
 		#define chklit(t,str,byte)\
@@ -532,6 +539,8 @@ codeset parse_expr(int precd){
 		chklit_strict(TOK_INCLUDE,"include");
 		chklit_strict(TOK_CLASS,"class");
 		chklit_strict(TOK_HAS,"has");
+		chklit_strict(TOK_CHOOSE,"or");
+		chklit_strict(TOK_IS,"is");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
@@ -569,9 +578,9 @@ codeset parse_expr(int precd){
 				string f=anonyfunc();
 				readtok(TOK_FUNC);s.push_back(LOADFUNC);
 				new_scope();
-				readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
+				readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
 				concat(s,loadint(tmp));
-				readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
+				readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 				b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
 				concat(s,loadint(b2.size()));
 				concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
@@ -598,6 +607,7 @@ codeset parse_expr(int precd){
 			case TOK_BITANDE:PF(BITANDE);
 			case TOK_BITORE:PF(BITORE);
 			case TOK_CHOOSE:PF(CHOOSE);
+			case TOK_IS:PF(ISA); 
 			case TOK_QUEZ:{
 				readtok(TOK_QUEZ);
 				b1=parse_expr(prior(TOK_QUEZ));
@@ -673,11 +683,16 @@ codeset parse_args(char end,uint &c){
 	}
 	return s; 
 }
-codeset parse_params(uint &c){
+codeset parse_params(uint &c,codeset&arg){
 	codeset s;c=0;
 	while(tok.type!=TOK_RPR){
 		if(tok.type==TOK_AND)readtok(TOK_AND);
 		concat(s,loadint(getid(readtok(TOK_ID).val,1)));
+		if(tok.type==TOK_COL){
+			nexttok();string t=tok.val;nexttok();
+			if(!isalpha(t[0]))fatal("expected a type name after ':', not %s",tokenname[(uint)tok.type]);
+			concat(arg,checktype(c,"'"+t+"'"));
+		}
 		c++;
 		if(tok.type==TOK_COM)readtok(TOK_COM); 
 	}
@@ -832,16 +847,16 @@ codeset compile_upvalue(string fid){
 	return s;
 }
 codeset compile_func(){
-	codeset s,b1,b2;
+	codeset s,b1,b2,pc;
 	string name=readtok(TOK_ID).val;
 	uint tmp;
 	s.push_back(LOADVAR);
 	concat(s,loadint(getid(name)));
 	new_scope();
 	s.push_back(LOADFUNC);
-	readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
+	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
 	concat(s,loadint(tmp));
-	readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
+	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
 	concat(s,loadint(b2.size()));
 	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
@@ -851,14 +866,14 @@ codeset compile_func(){
 	return s;
 }
 codeset compile_method(string&name){
-	codeset s,b1,b2;
+	codeset s,b1,b2,pc;
 	name=readtok(TOK_ID).val;
 	uint tmp;
 	new_scope();
 	s.push_back(LOADFUNC);
-	readtok(TOK_LPR);b1=parse_params(tmp),readtok(TOK_RPR);
+	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
 	concat(s,loadint(tmp));
-	readtok(TOK_LBR);b2=compile_block(0);readtok(TOK_RBR);
+	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
 	concat(s,loadint(b2.size()));
 	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
@@ -943,6 +958,7 @@ const uint RUNSTACK_SIZE=1024*1024;
 typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
 const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
 inline string ref2string(ull);
+inline string reftype(ull);
 inline string strictstr(const string&);
 struct val{
 	double num;
@@ -963,6 +979,18 @@ struct val{
 			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
 			case TREF:return ref2string((ull)num);
 			case TFUNC:return "<function "+num2str(num)+">";
+			case TNULL:return "null";
+			case TUNDEF:return "undefined";
+		}
+		return "?";
+	}
+	string gettype()const{
+		switch(type){
+			case TNUM:return "number";
+			case TSTR:return "string";
+			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
+			case TREF:return reftype((ull)num);
+			case TFUNC:return "function";
 			case TNULL:return "null";
 			case TUNDEF:return "undefined";
 		}
@@ -1089,9 +1117,18 @@ namespace object_manager{
 			vid.emplace_back(fn);
 			f.emplace_back(v);
 		}
-		vid.emplace_back("class"),f.emplace_back(class_name);
-		vid.emplace_back("super_class"),f.emplace_back(curcl.super_class);
+		vid.emplace_back("__class__"),f.emplace_back(class_name);
+		vid.emplace_back("__super_class__"),f.emplace_back(curcl.super_class);
 		return initarr(f,vid);
+	}
+	int is_subclass_of(string sub,const string&fa){
+		if(fa=="object")return 1;
+		do{
+			if(sub==fa)return 1;
+			if(classes.find(sub)==classes.end())fatal("cannot find class '%s'",sub.c_str());
+			sub=classes[sub].super_class;
+		}while(sub!="object");
+		return 0;
 	}
 }
 template <typename T>
@@ -1190,6 +1227,21 @@ inline val hasfield(const val&obj,const val&key){
 	ull id=getarrid(addr);
 	return val(0,indices[id].find(addr)!=indices[id].end()?TTRUE:TFALSE);
 }
+inline int isa(const val&sub,const val&fa){
+	if(fa.type!=TSTR)fatal("'is' operator requires type 'string' for right operands, not '%s'",valtypename[fa.type]);
+	string f=fa.str;
+	switch(sub.type){
+		case TNUM:return f=="number";
+		case TSTR:return f=="string";
+		case TTRUE:return f=="true";
+		case TFALSE:return f=="false";
+		case TNULL:return f=="null";
+		case TUNDEF:return f=="undefined";
+		case TFUNC:return f=="function";
+		case TREF:return vm::object_manager::is_subclass_of(sub.gettype(),f);
+	}
+	return 0;
+}
 umap<char,umap<string,ull>> builtinmethod;
 inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
@@ -1213,7 +1265,7 @@ inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&u
 	return usedfuncs;
 }
 ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
-int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
+int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_start,ull this_obj=0){
 	uint ip=0,len=s.size();
 	runstack curstk=stk_start;
 	stack<ull>cur_this_obj;
@@ -1360,6 +1412,13 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				curstk--,*(curstk-1)=nr;
 				BACK;
 			}
+			case ISA:{
+				uint nr=newreg();
+				generef(nr)=isa(generef(*(curstk-2)),generef(*(curstk-1)))?val(1,TTRUE):val(0,TFALSE);
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				curstk--,*(curstk-1)=nr;
+				BACK;
+			}
 			MATH(BITAND,&);
 			MATH(BITOR,|);
 			MATH(LSHF,<<);
@@ -1404,7 +1463,7 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 			UNARY(NEGATIVE,-);
 			case TYPEOF:{
 				uint nr=newreg();
-				generef(nr)=generef(*(curstk-1)).tostr();
+				generef(nr)=generef(*(curstk-1)).gettype();
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				*(curstk-1)=nr;
 				BACK;
@@ -1557,6 +1616,15 @@ int runbytes(const codeset&s,runstack stk_start,ull this_obj=0){
 				}
 				*curstk=newreg();
 				generef(*curstk)=object_manager::construct(clsname,raw),curstk++;
+				break;
+			}
+			case CHECKTYPE:{
+				ip++;
+				uint argnum=s[ip]*0xff+s[ip+1];
+				ip++;
+				string tname=generef(*(curstk-1)).str;
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
+				if(!isa((args[argnum]),tname))fatal("<function %d> requires type '%s' as argument %d, received type '%s'",fid,tname.c_str(),argnum,(args[argnum]).gettype().c_str());
 				break;
 			}
 			case NEWFRAME:newframe();BACK;
@@ -1789,6 +1857,14 @@ namespace utils{
 }
 set<ull>stringing;
 ull inner_stack[RUNSTACK_SIZE/32];
+inline string reftype(ull ref){
+	ull id=getarrid(ref);
+	if(is_obj[id]){
+		if(hasfield(val(ref,TREF),val("__class__")).is_true())return generef(getaddr(val(ref,TREF),val("__class__"))).tostr();
+		return "object";
+	}
+	return "Array";
+}
 inline string ref2string(ull ref){
 	ull id=getarrid(ref);
 	stringstream ret("");
@@ -1940,7 +2016,7 @@ inline ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull
 	for(uint i=0;i<args.size();i++)ag[i]=generef(args[args.size()-1-i]);
 	uint oldsize=frames.size();newframe();funcstack.push_back(fid);
 	for(uint i=0;i<ag.size();i++)generef(pid[i],1)=ag[i];
-	int ret=runbytes(functable[fid].instr,stk_start,this_obj);
+	int ret=runbytes(functable[fid].instr,ag,fid,stk_start,this_obj);
 	val v=generef(ret);
 	while(oldsize<frames.size())delframe();funcstack.pop_back();
 	int nr=newreg();
@@ -2073,7 +2149,7 @@ namespace launcher{
 			tokenize(src);codeset c;
 			while(curtok<toks.size())concat(c,compile());
 			if(c.size()&&c[c.size()-1]==POP)c[c.size()-1]=RETURN;
-			cout<<vm::generef(vm::runbytes(c,vm::vmstack)).tostr(1)<<endl;
+			cout<<vm::generef(vm::runbytes(c,vector<vm::val>(),-1,vm::vmstack)).tostr(1)<<endl;
 		}catch(string&s){cout<<s<<endl;}
 			cout<<">>> ";
 		}
@@ -2106,7 +2182,7 @@ namespace launcher{
 		ifstream fcin(arg.c_str(),ios::binary);
 		if(!fcin)fatal("can not open bytefile '%s'",arg.c_str()); 
 		char c;while(fcin.get(c))s.push_back((uchar)c);
-		vm::runbytes(s,vm::vmstack);
+		vm::runbytes(s,vector<vm::val>(),-1,vm::vmstack);
 	}
 }
 signed main(signed argc,char **argv){
