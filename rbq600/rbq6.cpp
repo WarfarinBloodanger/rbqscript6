@@ -150,7 +150,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,TOK_OP,
 	TOK_ADDE,TOK_SUBE,
 	TOK_MULE,TOK_DIVE,TOK_MODE,
 	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,
@@ -161,7 +161,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'",
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'","'operator'",
 	"+=","-=",
 	"*=","/=","%=",
 	"&=","|=","^=","<<=",">>="
@@ -217,6 +217,7 @@ char getidtype(const string&s){
 	if(s=="typeof")return TOK_TYPEOF;
 	if(s=="or")return TOK_CHOOSE;
 	if(s=="is")return TOK_IS;
+	if(s=="operator")return TOK_OP;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -865,13 +866,46 @@ codeset compile_func(){
 	s.push_back(ASSIGN);
 	return s;
 }
+string getoperator(){
+	switch(tok.type){
+		#define checkret(c,s)\
+		case TOK_##c:nexttok();return "__"#s"__";
+		checkret(CHOOSE,CHOOSE);
+		checkret(OR,OR);
+		checkret(AND,AND);
+		checkret(BITAND,BIT_AND);
+		checkret(BITOR,BIT_OR);
+		checkret(XOR,XOR);
+		checkret(LE,SML_EQL);
+		checkret(GE,BIG_EQL);
+		checkret(SML,SML);
+		checkret(BIG,BIG);
+		checkret(HAS,HAS);
+		checkret(LSHF,LSHIFT);
+		checkret(RSHF,RSHIFT);
+		checkret(ADD,ADD);
+		checkret(SUB,SUB);
+		checkret(MUL,MUL);
+		checkret(DIV,DIV);
+		checkret(MOD,MOD);
+		checkret(NOT,NOT);
+		checkret(BITNOT,BITNOT);
+		default:fatal("'%s' is not a reloadable operator",tok.val.c_str());
+	}
+	return "";
+}
 codeset compile_method(string&name){
-	codeset s,b1,b2,pc;
-	name=readtok(TOK_ID).val;
+	codeset s,b1,b2,pc;int cop=0;
+	if(name=="")name=readtok(TOK_ID).val;
+	else name=getoperator(),cop=1;
 	uint tmp;
 	new_scope();
 	s.push_back(LOADFUNC);
 	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
+	if(cop&&tmp==0){
+		if(name=="__ADD__")name="__PST__";
+		if(name=="__SUB__")name="__SUB__";
+	}
 	concat(s,loadint(tmp));
 	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
@@ -937,7 +971,14 @@ codeset compile_class(){
 		}
 		else if(tok.type==TOK_FUNC){
 			readtok(TOK_FUNC);
-			string mn;
+			string mn="";
+			codeset t=compile_method(mn);
+			tot++,concat(s,compile_str('"'+mn+'"'));
+			concat(s,t);
+		}
+		else if(tok.type==TOK_OP){
+			readtok(TOK_OP);
+			string mn="operator";
 			codeset t=compile_method(mn);
 			tot++,concat(s,compile_str('"'+mn+'"'));
 			concat(s,t);
@@ -959,9 +1000,12 @@ typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
 const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
 inline string ref2string(ull);
 inline string reftype(ull);
+inline int hasfield(const ull&,const string&);
 inline string strictstr(const string&);
+struct val;
+inline val call_op_func(const val&ref,const string&key,const val&arg);
 struct val{
-	double num;
+	double num,owner;
 	string str;
 	uchar type;
 	val(){type=TUNDEF;}
@@ -996,86 +1040,102 @@ struct val{
 		}
 		return "?";
 	}
+	#define checkop(code)\
+		if(type==TREF)if(hasfield(num,(string)"__"#code"__"))return call_op_func(*this,(string)"__"#code"__",b);
+	#define checkunaryop(code)\
+		if(type==TREF)if(hasfield(num,(string)"__"#code"__"))return call_op_func(*this,(string)"__"#code"__",val());
 	val operator+(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return num+b.num;
 		if(type==TSTR&&b.type==TSTR)return str+b.str;
 		if(type==TSTR||b.type==TSTR)return tostr()+b.tostr();
+		checkop(ADD);
 		fatal("operation '+' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
-	#define math_method(v)\
+	#define math_method(v,code)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return num v b.num;\
+		checkop(code);\
 		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
-	math_method(-)
-	math_method(*)
-	math_method(/)
+	math_method(-,SUB)
+	math_method(*,MUL)
+	math_method(/,DIV)
 	val operator%(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return fmod(num,b.num);
+		checkop(MOD);
 		fatal("operation '%%' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
 	#undef math_method
-	#define int_method(v)\
+	#define int_method(v,code)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return (ull)num v (ull)b.num;\
+		checkop(add);\
 		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
-	int_method(|)
-	int_method(&)
-	int_method(^)
-	int_method(<<)
-	int_method(>>)
+	int_method(|,BIT_OR)
+	int_method(&,BIT_AND)
+	int_method(^,XOR)
+	int_method(<<,LSHIFT)
+	int_method(>>,RSHIFT)
 	#undef int_method
 	val operator<(const val&b)const{
 		if(type==TNUM&&b.type==TNUM)return (ull)num<(ull)b.num?maketrue():makefalse();
 		if(type==TSTR&&b.type==TSTR)return str<b.str?maketrue():makefalse();
+		checkop(SML);
 		fatal("operation '<' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());
 		return val(TFALSE);
 	}
-	#define bool_method(v)\
+	#define bool_method(v,code)\
 	val operator v (const val&b)const{\
 		if(type==TNUM&&b.type==TNUM)return num v b.num?maketrue():makefalse();\
+		checkop(code);\
 		fatal("operation '"#v"' can't be applied between '%s'(%s) and '%s'(%s)",valtypename[type],this->tostr().c_str(),valtypename[b.type],b.tostr().c_str());\
 		return val(TFALSE);\
 	}
-	bool_method(<=)
-	bool_method(>)
-	bool_method(>=)
+	bool_method(<=,SML_EQL)
+	bool_method(>,BIG)
+	bool_method(>=,BIG_EQL)
 	val operator==(const val&b)const{
 		if(type!=b.type)return val(TFALSE);
 		if(type==TSTR)return str==b.str?maketrue():makefalse();
+		checkop(EQL);
 		return num==b.num?maketrue():makefalse();
 	}
 	val operator!=(const val&b)const{
+		checkop(NEQ);
 		return ((*this)==b).is_true()?makefalse():maketrue();
 	}
 	#undef bool_method
 	val operator+()const{
 		if(type==TNUM)return +num;
+		checkunaryop(PST);
 		fatal("unary operation '+' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
 	val operator-()const{
 		if(type==TNUM)return -num;
+		checkunaryop(NGT);
 		fatal("unary operation '-' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
 	val operator~()const{
 		if(type==TNUM)return ~(ull)num;
+		checkunaryop(BIT_NOT);
 		fatal("unary operation '~' can't be applied on '%s'(%s)",valtypename[type],this->tostr().c_str());
 		return val(TFALSE);
 	}
-	#define logic_method(v)\
+	#define logic_method(v,code)\
 	val operator v (const val&b)const{\
+		checkunaryop(code);\
 		return is_true() v b.is_true()?maketrue():makefalse();\
 	}
-	logic_method(&&)
-	logic_method(||)
-	val operator!()const{return !is_true()?maketrue():makefalse();}
+	logic_method(&&,AND)
+	logic_method(||,OR)
+	val operator!()const{checkunaryop(NOT);return !is_true()?maketrue():makefalse();}
 	#undef logic_method
 	val smller(const val&v)const{
 		if(v.type!=type)return false;
@@ -1086,7 +1146,7 @@ struct val{
 		}
 		return makefalse();
 	}
-	val choose(const val&v)const{return type==TUNDEF||type==TNULL?v:(*this);}
+	val choose(const val&b)const{checkop(CHOOSE);return type==TUNDEF||type==TNULL?b:(*this);}
 };
 inline val initarr(const vector<val>&v,const vector<val>&id);
 namespace object_manager{
@@ -1217,6 +1277,10 @@ inline void mdfaddr(ull addr,int del=0){
 		indices[id].erase(addr); 
 		if(!is_obj[id])arrlens[id]=arrlens[id]-1;
 	}
+}
+inline int hasfield(const ull&ref,const string&key){
+	ull addr=ref+getkeyhash(key),id=getarrid(addr);
+	return indices[id].find(addr)!=indices[id].end();
 }
 inline val hasfield(const val&obj,const val&key){
 	if(obj.type!=TREF)return val(0,TTRUE);
@@ -1502,7 +1566,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			}
 			case GETADDR:{
 				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
-				cur_this_obj.push(*(curstk-2));
+				generef(nr).owner=*(curstk-2);
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				BACK;
@@ -1538,10 +1602,10 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				}
 				if(generef(*(curstk-1)).type!=TFUNC)fatal("can't call a non-function type '%s'(%s)",valtypename[generef(*(curstk-1)).type],generef(*(curstk-1)).tostr().c_str());
 				
-				ull fid=generef(*(curstk-1)).num;
+				ull fid=generef(*(curstk-1)).num,_this=generef(*(curstk-1)).owner;
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 				curstk--;
-				ull nr=call_func(fid,args,curstk,cur_this_obj.size()?cur_this_obj.top():0);cur_this_obj.size()?cur_this_obj.pop():void();*curstk=nr,curstk++;
+				ull nr=call_func(fid,args,curstk,_this);*curstk=nr,curstk++;
 				for(auto a:freelist)freereg(a);
 				BACK;
 			}
@@ -1857,6 +1921,13 @@ namespace utils{
 }
 set<ull>stringing;
 ull inner_stack[RUNSTACK_SIZE/32];
+inline val call_op_func(const val&_this,const string&key,const val&arg){
+	ull ref=_this.num;
+	ull nr=newreg();generef(nr)=val(ref,TREF);
+	vector<ull>arglist;
+	if(arg.type!=TUNDEF){ull argr=newreg();generef(argr)=arg;arglist.push_back(argr);}
+	return generef(call_func(generef(getaddr(val(ref,TREF),key)).num,arglist,inner_stack,nr));
+}
 inline string reftype(ull ref){
 	ull id=getarrid(ref);
 	if(is_obj[id]){
@@ -1920,7 +1991,6 @@ inline string strictstr(const string&str){
 			}
 		}
 	}
-	return "\""+r+"\"";
 	return "\""+r+"\"";
 }
 inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
