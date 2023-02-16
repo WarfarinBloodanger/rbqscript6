@@ -197,15 +197,16 @@ RBQScript 支持一系列运算符。
 - - 支持带操作的赋值运算符有：`+= -= *= /= %= <<= >>= &= |= ^=`。
 - **功能运算符**，这些运算符拥有特定的功能：
 - - `typeof` 取类型，语法为 `typeof value`，将会用字符串形式返回 `value` 的类型信息。
-- - `has` 判断存在，语法为 `value_set has value`，判断 `value_set` 中是否包含 `value` 这个值，以 `true` 或 `false` 返回结果。
+- - `has` 判断存在，语法为 `object has key`，判断 `object` 中是否包含 `key` 这个键值，以 `true` 或 `false` 返回结果。
 - - `new` 构造对象，语法为 `new Class(field1=value1,field2=value2...)`。具体行为将在本文档的对应小节表述。
-
+- - `is` 判断是否是某种类型，语法为 `val is type`，判断 `val` 是否是 `type` 类型，以 `true` 或 `false` 返回结果。
+ 
 部分语言特性：
 
 - `&& ||` 逻辑运算符是短路运算符。`&&` 返回的是两个运算数中为 `false` 的那一个（两个都为 `false` 返回第一个），`||` 返回的是两个运算符中为 `true` 的那一个（两个都为 `true` 返回第一个）；
 - `or` **不进行短路运算**。它与 `||` 的区别在于：0 对于 `or` 来说是真值。`0 or 3` 将会返回 0，而 `0 || 3` 将会返回 3。
 - 位运算符将会把实数转化为 64 位长整型进行计算，比如 `3.5 & 1` 实际将会被转化为 `3 & 1`。
-- `has` 运算符检查的是值而不是键。比如 `{'test':3} has 3` 返回 `true`，而 `{'test':3} has 'test'` 返回 false。
+- `is` 运算符涉及到对象系统，具体行为在下面对应章节描述。
 
 ## 控制流
 
@@ -402,6 +403,18 @@ function my_func(a,b){
 
 这段代码将会定义一个函数 `my_func`，它拥有 2 个参数，分别为 `a` 和 `b`。
 
+### 函数参数
+
+有些时候需要检查传递给函数的参数是否是需要的类型，使用 `is` 运算符可以完成这个工作，但是语法稍显冗长。RBQScript 提供**参数类型声明**语法：
+
+```
+function name(arg1:type1, arg2:type2,...){}
+```
+
+对于所有加了声明的参数，当函数被调用，系统将对每个声明了类型的参数执行 `arg is type`，如果返回值是 false，则报告错误信息。
+
+对于不声明参数的类型，将不检查类型是否符合。
+
 ### 函数返回值
 
 函数可以拥有返回值，使用 `return` 语句返回值，当函数执行到 return 语句时将会直接中断流程退出。其格式如下：
@@ -418,7 +431,7 @@ return value
 例如：
 
 ```
-function test(a){
+function test(a:number){
   if(a<0)return;
   if(a>0)return a+9
 }
@@ -504,12 +517,29 @@ Hello
 为了支持 OOP（面向对象编程），RBQScript 提供类的概念。类的定义如下：
 
 ```
-class name [: superclass] {
+class name {
   var field1
-  var field2
+  var field2,field3
   ...
   function method1(){}
   function method2(){}
+  ...
+  operator+(rhs){}
+  ...
+}
+```
+
+RBQScript 的类定义包含以下元素：
+- `var` 开头的行表示对象的字段，可以用逗号分隔。
+- `function` 表示对象的方法；
+- `operator` 是运算符重载，具体将在下面的章节讲述。
+
+### 类继承
+
+当需要从一个基类派生出多个子类的时候，可以采用如下语法：
+
+```
+class name : superclass{
   ...
 }
 ```
@@ -522,6 +552,36 @@ class student : person { var major }
 ```
 
 在这个例子里，`person` 类拥有一个字段：`name`；`student` 类继承了 `person` 类，将会拥有两个字段：`name` 和 `major`。
+
+RBQScript 不支持多重继承，即一个类继承多个类。
+
+### 类型系统
+
+RBQScript 的所有类都从一个根类 `object` 派生出来，所有对象都是 `object` 的类型都是子类。请注意，非对象的原生类型均不是 `object`。例如如下代码：
+
+```
+class person {}
+class student : person {}
+f = new student()
+g = new person()
+Console.print(f is student, f is person, f is object)
+Console.print(g is student, g is person, g is object)
+Console.print(0 is number, 0 is object, [] is object)
+```
+
+这段代码将输出：
+```
+true true true
+false true true
+true false true
+```
+
+对以上代码的解释如下：
+
+- `f` 是 `student` 对象，因此 `f is student` 是成立的。同时，因为 `student` 是 `person` 的子类，因此 `f is person` 也成立。同理，`f is object` 也成立。
+- `g` 是 `person` 对象，因此 `g is person` 是不成立的。其余两句和 `f` 的判断方式相同。
+- 0 是一个数字，因此 `0 is number` 是成立的，而因为内置类型不属于对象，所以 `0 is object` 是不成立的。
+- 数组类型也是对象，因此 `[] is object` 成立。
 
 ### 构造对象
 
@@ -560,4 +620,31 @@ f.look()
 
 运行以上代码将会输出 `5 10`。原因在于第一个 `x` 访问到的是外围的变量 `x`，即 5；而第二个 `this.x` 访问到的是自身的 `x` 字段，即 10。
 
+### 重载运算符
 
+RBQScript 支持重载运算符。重载运算符可以避免冗长的方法调用（比如 `a.add(b)`），换来更简洁的语法和更高的开发效率。格式如下：
+
+```
+class pair{
+  var x,y
+  operator * (rhs:pair){
+    return this.x*rhs.x + this.y*rhs.y
+  }
+}
+
+new pair(x=1,y=2) * new pair(x=5,y=6)
+```
+
+重载了乘法运算符 `*` 之后，原本不能直接相乘的 `pair` 类就可以使用乘号 `*` 直接相乘。参数的类型限定不是必要的，但是**建议使用限定来限制参数类型**。
+
+RBQScript 支持以下运算符的重载：
+
+```
++(unary) -(unary)
++ - * / % 
+> < >= <= == != 
+& | ^ ~ >> <<
+&& || ! or
+```
+
+当对应运算符被支持之后，如果存在对应的**赋值运算符**（如 `+` 对应 `+=`、`*` 对应 `*=`），也将自动被支持。
