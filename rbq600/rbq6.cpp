@@ -510,7 +510,7 @@ codeset parse_obj();
 int anfunc=0;
 inline string anonyfunc(){return "$"+num2str(++anfunc);}
 codeset parse_expr(int precd){
-	codeset s,b1,b2,pc;uint tmp;bool liter=precd==prior(TOK_DOT)&&(curtok-1>=0&&toks[curtok-1].type==TOK_DOT);
+	codeset s,b1,b2,pc;uint tmp;bool liter=precd==prior(TOK_DOT)&&(curtok-1>=0&&(toks[curtok-1].type==TOK_DOT));
 	switch(tok.type){
 		case TOK_FEN:nexttok();return s; 
 		#define chklit(t,str,byte)\
@@ -608,7 +608,11 @@ codeset parse_expr(int precd){
 			case TOK_BITANDE:PF(BITANDE);
 			case TOK_BITORE:PF(BITORE);
 			case TOK_CHOOSE:PF(CHOOSE);
-			case TOK_IS:PF(ISA); 
+			case TOK_IS:{
+				v=tok.val,pr=prior(tok.type);curtok++;
+				concat(s,compile_str("'"+tok.val+"'"));curtok++;s.push_back(ISA);
+				break;
+			}
 			case TOK_QUEZ:{
 				readtok(TOK_QUEZ);
 				b1=parse_expr(prior(TOK_QUEZ));
@@ -904,7 +908,7 @@ codeset compile_method(string&name){
 	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
 	if(cop&&tmp==0){
 		if(name=="__ADD__")name="__PST__";
-		if(name=="__SUB__")name="__SUB__";
+		if(name=="__SUB__")name="__NGT__";
 	}
 	concat(s,loadint(tmp));
 	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
@@ -1252,7 +1256,7 @@ inline val& localref(ull addr){return frames[frames.size()-1][addr]=val(TNULL),f
 inline ull newreg(){return regs.size()*regoffset+(++regs[regs.size()-1]);}
 inline void delreg(){regs[regs.size()-1]--;}
 inline void freereg(const uint&addr){for(ull i=frames.size()-1;~i;i--)if(frames[i].has(addr))frames[i].ctt.erase(addr);}
-inline ull allocarr(){return arrlength*(++usedarrs);}
+inline ull allocarr(){return arrlens[++usedarrs]=-1,arrlength*(usedarrs);}
 inline ull getarrid(ull x){return x/arrlength;}
 inline ull getlen(val v){
 	ull addr;
@@ -1857,7 +1861,8 @@ namespace utils{
 		ull id=getarrid(ref);
 		if(is_obj[id])fatal("can not push elements into an object reference%c",' ');
 		ull addr=indices[id].size()?*indices[id].rbegin():ref;
-		addr++,generef(-addr)=v,mdfaddr(-addr);
+		if(getlen(val(ref,TREF)))addr++;
+		generef(-addr)=v,mdfaddr(-addr);
 		return v;
 	}
 	inline val arrpop(ull ref){
@@ -2073,6 +2078,8 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 62:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=max(retv,arg(i),[](const val&a,const val&b){return (a.smller(b)).is_true();});break;
 		case 63:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=min(retv,arg(i),[](const val&a,const val&b){return (b.smller(a)).is_true();});break;
 		case 64:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=retv+arg(i);break;
+		case 65:need(1);chktype(0,TREF);retv=arg(0).num;break;
+		case 66:need(1);chktype(0,TNUM);retv=generef(arg(0).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -2162,6 +2169,7 @@ void initvm(){
 	method("ceil"),method("floor"),method("log2");
 	makeobj("Math");
 	func("max"),func("min"),func("sum");
+	func("__address__"),func("__access__");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
