@@ -1,0 +1,6 @@
+class Map{
+	var dict
+	constructor(){dict={}}
+	function get(f){return dict[f]}
+	function put(f,a){dict[f]=a}
+}

@@ -1,0 +1,66 @@
+class complex{
+	var x,y
+	constructor(x,y){
+		this.x=x this.y=y
+	}
+	operator+(b:complex){
+		return new complex(this.x+b.x,this.y+b.y)
+	}
+	operator-(b:complex){
+		return new complex(this.x-b.x,this.y-b.y)
+	}
+	operator*(b:complex){
+		return new complex(this.x*b.x-this.y*b.y,this.x*b.y+this.y*b.x)
+	}
+	function to_str(){
+		return "{0} + {1}i".format(this.x,this.y)
+	}
+}
+new complex()
+var r=[]
+var limit=1,l=0
+function FFT(A,type){
+	for(i=0;i<limit;i=i+1)if(i<r[i]){
+		var t=A[i]
+		A[i]=A[r[i]]
+		A[r[i]]=t
+	}
+	for(mid=1;mid<limit;mid<<=1){
+		wn=new complex(Math.cos(Math.pi/mid),type*Math.sin(Math.pi/mid))
+		var R=mid<<1
+		for(j=0;j<limit;j+=R){
+			w=new complex(1,0)
+			for(k=0;k<mid;k+=1){
+				var x=A[j+k],y=w*A[j+mid+k]
+				A[j+k]=x+y
+				A[j+mid+k]=x-y
+				w*=wn
+			}
+		}
+	}
+}
+function trans(A){
+	var ret=[]
+	for(i=0;i<len(A);i+=1)ret.push(new complex(A[i],0))
+	return ret
+}
+var a=[1,2,3,4,3,2,5]
+var b=[4,5,6,7,10,20,19,429]
+var n=len(a)-1,m=len(b)-1
+while(limit<=n+m){
+	limit<<=1
+	l+=1
+}
+for(i=0;i<limit;i+=1)r[i]=0
+for(i=n+1;i<=limit;i+=1)a[i]=0
+for(i=m+1;i<=limit;i+=1)b[i]=0
+for(i=0;i<limit;i+=1)r[i]=(r[i>>1]>>1)|((i&1)<<(l-1))
+a=trans(a)
+b=trans(b)
+FFT(a,1)
+FFT(b,1)
+for(i=0;i<=limit;i=i+1)a[i]*=b[i]
+FFT(a,-1)
+for(i=0;i<=n+m;i=i+1)a[i]=Math.floor(a[i].x/limit+0.5)
+Console.print(a) 
+
