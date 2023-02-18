@@ -2222,6 +2222,7 @@ void initvm(){
 	usedfuncs=1024;
 	usedname=1024;
 	object_manager::make_class("object","object",umap<string,val>(),0);
+	object_manager::make_class("Array","object",umap<string,val>(),0);
 	#undef func
 	#undef method
 	#undef makeobj
