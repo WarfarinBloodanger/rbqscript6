@@ -150,7 +150,7 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,TOK_OP,
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,TOK_OP,TOK_CONSTRUCTOR,
 	TOK_ADDE,TOK_SUBE,
 	TOK_MULE,TOK_DIVE,TOK_MODE,
 	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,
@@ -161,7 +161,7 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'","'operator'",
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'","'operator'","'constructor'",
 	"+=","-=",
 	"*=","/=","%=",
 	"&=","|=","^=","<<=",">>="
@@ -218,6 +218,7 @@ char getidtype(const string&s){
 	if(s=="or")return TOK_CHOOSE;
 	if(s=="is")return TOK_IS;
 	if(s=="operator")return TOK_OP;
+	if(s=="constructor")return TOK_CONSTRUCTOR;
 	return TOK_ID; 
 }
 void tokenize(char *src){
@@ -901,15 +902,17 @@ string getoperator(){
 codeset compile_method(string&name){
 	codeset s,b1,b2,pc;int cop=0;
 	if(name=="")name=readtok(TOK_ID).val;
-	else name=getoperator(),cop=1;
+	else if(name=="operator")name=getoperator(),cop=1;
+	else cop=2;
 	uint tmp;
 	new_scope();
 	s.push_back(LOADFUNC);
 	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
-	if(cop&&tmp==0){
+	if(cop==1&&tmp==0){
 		if(name=="__ADD__")name="__PST__";
 		if(name=="__SUB__")name="__NGT__";
 	}
+	if(cop==2)name="__constructor_"+num2str(tmp)+"__";
 	concat(s,loadint(tmp));
 	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
@@ -933,16 +936,9 @@ codeset compile_new(){
 	int tot=0;
 	readtok(TOK_LPR);
 	while(1){
-		if(tok.type==TOK_ID){
-			string fn=readtok(TOK_ID).val;
-			if(tok.type==TOK_ASS||tok.type==TOK_COL)nexttok();
-			else fatal("expected '=' or ':' after property name in object construction%c",' ');
-			tot++,concat(s,compile_str('"'+fn+'"'));
-			concat(s,parse_expr(0));
-		}
-		else if(tok.type==TOK_FEN||tok.type==TOK_COM)nexttok();
+		if(tok.type==TOK_COM)nexttok();
 		else if(tok.type==TOK_RPR){nexttok();break;}
-		else fatal("unexpected '%s' in the construction of object of class '%s'",tokenname[(uint)tok.type],name.c_str());
+		else concat(s,parse_expr(0)),tot++;
 	}
 	concat(s,compile_str('"'+name+'"'));
 	s.emplace_back(CONSTRUCT);
@@ -987,6 +983,13 @@ codeset compile_class(){
 			tot++,concat(s,compile_str('"'+mn+'"'));
 			concat(s,t);
 		}
+		else if(tok.type==TOK_CONSTRUCTOR){
+			readtok(TOK_CONSTRUCTOR);
+			string mn="constructor";
+			codeset t=compile_method(mn);
+			tot++,concat(s,compile_str('"'+mn+'"'));
+			concat(s,t);
+		} 
 		else if(tok.type==TOK_FEN)readtok(TOK_FEN);
 		else if(tok.type==TOK_RBR){readtok(TOK_RBR);break;}
 		else fatal("unexpected '%s' in the definition of class '%s'",tokenname[(uint)tok.type],name.c_str());
@@ -1170,14 +1173,13 @@ namespace object_manager{
 		curcl.super_class=super_class;
 		curcl.class_name=class_name;
 	}
-	val construct(const string&class_name,umap<string,val>&values){
+	val construct(const string&class_name){
 		if(classes.find(class_name)==classes.end())fatal("cannot find class '%s'",class_name.c_str());
 		const auto&curcl=classes[class_name];
 		vector<val> vid,f; 
 		for(auto a:curcl.field){
 			string fn=a.first;
 			val v=a.second;
-			if(values.find(fn)!=values.end())v=values[fn];
 			vid.emplace_back(fn);
 			f.emplace_back(v);
 		}
@@ -1668,22 +1670,28 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			}
 			case CONSTRUCT:{
 				ip++;
-				uint fieldcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint argscnt_=argscnt;
 				ip+=3;
+				vector<ull> args,freelist;
 				string clsname=generef(*(curstk-1)).str;
-				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
-				umap<string,val>raw;
-				while(fieldcnt--){
-					val v=generef(*(curstk-1));
-					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
+				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
+				curstk--;
+				while(argscnt--){
+					args.push_back(*(curstk-1));
+					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 					curstk--;
-					string key=(generef(*(curstk-1)).str);
-					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
-					curstk--;
-					raw[key]=v;
 				}
-				*curstk=newreg();
-				generef(*curstk)=object_manager::construct(clsname,raw),curstk++;
+				ull newobj=newreg();
+				generef(newobj)=object_manager::construct(clsname);
+				*curstk=newobj,curstk++;
+				string constructor_name="__constructor_"+num2str(argscnt_)+"__";
+				if(!hasfield(generef(newobj),constructor_name).is_true()){
+					if(argscnt_)fatal("class '%s' has no constructor receiving %d argument%c",generef(newobj).gettype().c_str(),argscnt_,argscnt==1?' ':'s');
+					else break;
+				}
+				ull fid=generef(getaddr(generef(newobj),constructor_name)).num,_this=newobj;
+				call_func(fid,args,curstk,_this);
 				break;
 			}
 			case CHECKTYPE:{
