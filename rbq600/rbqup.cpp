@@ -36,6 +36,16 @@ OPCODE SML=0XCB;
 OPCODE LE=0XCC;
 OPCODE POSITIVE=0XCD;
 OPCODE NEGATIVE=0XCE;
+OPCODE ADDE=0XB0;
+OPCODE SUBE=0XB1;
+OPCODE MULE=0XB2;
+OPCODE DIVE=0XB3;
+OPCODE MODE=0XB4;
+OPCODE LSHFE=0XB5;
+OPCODE RSHFE=0XB6;
+OPCODE BITORE=0XB7;
+OPCODE BITANDE=0XB8;
+OPCODE XORE=0XB9;
 OPCODE ADD=0XD0;
 OPCODE SUB=0XD1;
 OPCODE MUL=0XD2;
@@ -45,6 +55,10 @@ OPCODE LSHF=0XD5;
 OPCODE RSHF=0XD6;
 OPCODE NOT=0XD7;
 OPCODE BITNOT=0XD8;
+OPCODE HAS=0XD9;
+OPCODE TYPEOF=0XDA;
+OPCODE CHOOSE=0XDB;
+OPCODE ISA=0XDC;
 OPCODE JUMP=0XE0;
 OPCODE JUMP_IF_FALSE=0XE1;
 OPCODE LOOP=0XE2;
@@ -56,9 +70,12 @@ OPCODE NEWFRAME=0XE7;
 OPCODE DELFRAME=0XE8;
 OPCODE POP=0XE9;
 OPCODE LOADTHIS=0XEA;
+OPCODE MAKECLASS=0XEB;
+OPCODE CONSTRUCT=0XEC;
+OPCODE CHECKTYPE=0xED;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
-OPCODE CTNHOLDER=0XF1; 
+OPCODE CTNHOLDER=0XF1;
 char excpbuf[1024];
 #define fatal(str,...) do{sprintf(excpbuf,str,__VA_ARGS__);throw (string)excpbuf;}while(0)
 void output(string opname,const string&value,const string&comment){
@@ -229,6 +246,22 @@ void runbytes(const codeset&s){
 				output("POP","","");
 				break;
 			}
+			#define assigner(tokname,t)\
+			case tokname:{\
+				addall();\
+				output(#tokname,"","");\
+				break;\
+			}
+			assigner(ADDE,+)
+			assigner(SUBE,-)
+			assigner(MULE,*)
+			assigner(DIVE,/)
+			assigner(MODE,%)
+			assigner(XORE,^)
+			assigner(BITANDE,&)
+			assigner(BITORE,|)
+			assigner(LSHFE,<<)
+			assigner(RSHFE,>>)
 			#define MATH(v,sym)\
 			case v:{\
 				addall();\
@@ -250,9 +283,24 @@ void runbytes(const codeset&s){
 			MATH(BITOR,|);
 			MATH(LSHF,<<);
 			MATH(RSHF,>>);
-			MATH(AND,&&);
-			MATH(OR,||);
 			MATH(XOR,^);
+			case AND:{
+				ip++;
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				addall();
+				output("AND",num2str(offset),"jump to "+num2str(ip+offset+1));
+			}
+			case OR:{
+				ip++;
+				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				addall();
+				output("OR",num2str(offset),"jump to "+num2str(ip+offset+1));
+			}
+			MATH(HAS,?)
+			MATH(CHOOSE,?)
+			MATH(ISA,?)
 			#undef MATH
 			#define UNARY(v,sym)\
 			case v:{\
@@ -350,6 +398,29 @@ void runbytes(const codeset&s){
 				output("DELFRAME","","");
 				break;
 			}
+			case MAKECLASS:{
+				ip++;
+				uint fieldcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				addall();
+				output("MAKECLASS",num2str(fieldcnt),num2str(fieldcnt)+" field"+(fieldcnt==1?"":"s"));
+				break;
+			}
+			case CONSTRUCT:{
+				ip++;
+				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];ip+=3;
+				addall();
+				output("CONSTRUCT",num2str(argscnt),num2str(argscnt)+" arg"+(argscnt==1?"":"s"));
+				break;
+			}
+			case CHECKTYPE:{
+				ip++;
+				uint argnum=s[ip]*0xff+s[ip+1];
+				ip++;
+				addall();
+				output("CHECKTYPE",num2str(argnum),"check arg "+num2str(argnum));
+				break;
+			}
 		}
 		oldip=++ip;
 	}
@@ -365,14 +436,13 @@ void seekcode(const func&f){
 	runbytes(f.instr);
 }
 void initvm(){
-	int r=0;
 	usedfuncs=1024;
 }
 void see(string arg){
 	codeset s;
 	ifstream fcin(arg,ios::binary);
 	char c;while(fcin.get(c))s.push_back((uchar)c);
-	int id=newfunc(vector<int>(),s,vector<int>());
+	newfunc(vector<int>(),s,vector<int>());
 	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();fcin.close();
 }
 int main(int argc,char **argv){
