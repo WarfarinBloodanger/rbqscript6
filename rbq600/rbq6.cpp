@@ -254,9 +254,32 @@ void tokenize(char *src){
 			}
 		}
 		else if(src[loc]=='\''||src[loc]=='\"'){
+			if(loc+2<len&&src[loc+1]==src[loc]&&src[loc+2]==src[loc]){
+				char e=src[loc];
+				loc+=2;
+				while(loc+2<len&&!(src[loc]==e&&src[loc+1]==e&&src[loc+2]==e)){
+					if(src[loc]=='\\')cur.val.push_back('\\');
+					cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				}
+				if(loc+2>=len)fatal("uncompleted multi-line string, expected '%c%c%c' at end",e,e,e);
+				if(src[loc]==e)cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				loc+=3;
+				cur.type=TOK_STR,toks.push_back(cur);
+			}
+			else{
+				char s=src[loc];cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				while(loc<len&&src[loc]!=s&&src[loc]!='\r'&&src[loc]!='\n'){
+					if(src[loc]=='\\')cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+					cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				}
+				if(src[loc]==s)cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				cur.type=TOK_STR,toks.push_back(cur);
+			}
+		}
+		else if(src[loc]=='`'){
 			char s=src[loc];cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 			while(loc<len&&src[loc]!=s&&src[loc]!='\r'&&src[loc]!='\n'){
-				if(src[loc]=='\\')cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				if(src[loc]=='\\')cur.val.push_back('\\');
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 			}
 			if(src[loc]==s)cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
@@ -276,7 +299,21 @@ void tokenize(char *src){
 			case('+'):checkeql(ADD);
 			case('-'):checkeql(SUB);
 			case('*'):checkeql(MUL);
-			case('/'):checkeql(DIV);
+			case('/'):{
+				if(loc+1<len&&src[loc+1]=='/'){
+					loc++;
+					while(loc<len&&src[loc]!='\n')loc++;
+					loc++;
+				}
+				else if(loc+1<len&&src[loc+1]=='*'){
+					loc++;
+					while(loc+1<len&&!(src[loc]=='*'&&src[loc+1]=='/'))loc++;
+					if(loc+1>=len)fatal("uncompleted comment symbol, expected '*/' at end%c",' ');
+					loc+=2;
+				}
+				else checkeql(DIV);
+				break;
+			}
 			case('%'):checkeql(MOD);
 			case('.'):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_DOT,toks.push_back(cur);break;
 			case('('):cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_LPR,toks.push_back(cur);break;
@@ -705,14 +742,15 @@ codeset parse_params(uint &c,codeset&arg){
 	return s;
 }
 codeset parse_decl(){
-	codeset s;
+	codeset s,T;
 	while(tok.type==TOK_ID){
 		token t=readtok(TOK_ID);
+		if(tok.type==TOK_ASS)readtok(TOK_ASS),concat(T,parse_expr(20));
+		else T.push_back(LOADNULL);
+		T.push_back(ASSIGNLOCAL);
 		s.push_back(LOADVARLOCAL);
 		concat(s,loadint(getid(t.val,1)));
-		if(tok.type==TOK_ASS)readtok(TOK_ASS),concat(s,parse_expr(20));
-		else s.push_back(LOADNULL);
-		s.push_back(ASSIGNLOCAL);
+		concat(s,T);
 		if(tok.type!=TOK_COM)break;
 		else readtok(TOK_COM);
 	}
@@ -798,7 +836,9 @@ void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 codeset compile_block(bool frame){
 	codeset s;
 	if(frame)s.push_back(NEWFRAME);
+	new_scope();
 	while(tok.type!=TOK_RBR)concat(s,compile());
+	del_scope();
 	if(frame)s.push_back(DELFRAME);
 	return s;
 }
@@ -2188,7 +2228,6 @@ void initvm(){
 	#undef builtincls
 }
 }
-
 namespace launcher{
 	bool cmp,run;
 	string str; 
