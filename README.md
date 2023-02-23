@@ -67,6 +67,8 @@
 | `str_to_int` | `(val=string,base=number)` | `string`| 将 base 进制字符串 val 转化为十进制的结果返回。出现非法字符、base 为 -1、0、1 或者绝对值大于 36 的数时抛出异常 |
 | `utf8_string` | `(seq=reference)` | `string`| 返回将 seq 指向的对象（必须是列表）的每个元素以 UTF-8 编码后连接起来的字符串。 |
 | `utf8_string` | `(...)` | `string`| 返回将每个参数以 UTF-8 编码后连接起来的字符串。 |
+| `keys` | `(ref:reference)` | `reference`| 返回一个数组，保存了 `ref` 内部所有的键。|
+| `values` | `(ref:reference)` | `reference`| 返回一个数组，保存了 `ref` 内部所有的值。|
 
 - 【1】 使用同 C 语言相同的打开格式描述符。即 `r/w/a/r+/w+/a+/rb/wb/ab/rb+/wb+/ab+`。
 
