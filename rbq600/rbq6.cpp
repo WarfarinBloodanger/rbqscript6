@@ -69,6 +69,26 @@ typedef double DB;
 int force_short_double=0;
 
 OPCODE NOP=0x88;
+OPCODE LOAD0=0x10;
+OPCODE LOAD1=0x11;
+OPCODE LOAD2=0x12;
+OPCODE LOAD3=0x13;
+OPCODE LOAD4=0x14;
+OPCODE LOAD5=0x15;
+OPCODE LOAD6=0x16;
+OPCODE LOAD7=0x17;
+OPCODE LOAD8=0x18;
+OPCODE LOAD9=0x19;
+OPCODE LOAD10=0x1A;
+OPCODE LOAD11=0x1B;
+OPCODE LOAD12=0x1C;
+OPCODE LOAD13=0x1D;
+OPCODE LOAD14=0x1E;
+OPCODE LOAD15=0x1F;
+OPCODE LOAD1BIT=0x21;
+OPCODE LOAD2BIT=0x22;
+OPCODE LOAD3BIT=0x23;
+OPCODE LOAD4BIT=0x24;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
 OPCODE LOADVAR=0XA2;
@@ -465,8 +485,30 @@ string num2str(const double&d){
 inline void concat(codeset &a,const codeset &b){
 	for(auto x:b)a.push_back(x);
 } 
+bool isint(double x){
+	return abs(round(x)-x)<(double)0.000000000000001;
+}
+inline codeset loadshort(int v){ 
+	codeset s;s.push_back(v/0xffu),s.push_back(v%0xffu);return s;
+} 
+inline codeset loadint(int v){
+	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
+}
+bool check_smlint(double x,codeset&s){
+	if(x<0||!isint(x))return 0;
+	x=uint(x);
+	if(x<=16)return s.push_back(LOAD0+x),1;
+	if(x<=0xffffffffu){
+		codeset e;
+		while(x)e.push_back(uint(x)%256),x=(uint)x/256;
+		reverse(e.begin(),e.end());
+		return s.push_back(LOAD1BIT+e.size()-1),concat(s,e),1;
+	}
+	return 0;
+}
 codeset compile_num(double x){
 	codeset s;
+	if(check_smlint(x,s))return s;
 	if(force_short_double){
 		bpser8.x=x;
 		s.push_back(LOADNUM);
@@ -478,12 +520,6 @@ codeset compile_num(double x){
 		for(int i=0;i<16;i++)s.push_back(bpser.bits[i]);
 	}
 	return s;
-}
-inline codeset loadshort(int v){
-	codeset s;s.push_back(v/0xffu),s.push_back(v%0xffu);return s;
-} 
-inline codeset loadint(int v){
-	codeset s;concat(s,loadshort(v/0xffffu)),concat(s,loadshort(v%0xffffu));return s;
 }
 long long hex2dec(const string&s);
 string encd(ull v){
@@ -1268,7 +1304,7 @@ struct val{
 		if(v.type!=type)return false;
 		switch(type){
 			case TNUM:return num<v.num?maketrue():makefalse();
-			case TSTR:return str<v.str?maketrue():makefalse();
+			case TSTR:return str>v.str?maketrue():makefalse();
 			default:return type<v.type?maketrue():makefalse();
 		}
 		return makefalse();
@@ -1470,6 +1506,22 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
 				BACK;
 			}
+			#define loader(x)\
+			case LOAD##x:{\
+				ull nr=newreg();generef(nr)=val(x,TNUM),*curstk=nr,curstk++;\
+				break;\
+			}
+			loader(0) loader(1) loader(2) loader(3) 
+			loader(4) loader(5) loader(6) loader(7) 
+			loader(8) loader(9) loader(10) loader(11) 
+			loader(12) loader(13) loader(14) loader(15)
+			case LOAD1BIT:case LOAD2BIT:case LOAD3BIT:case LOAD4BIT:{
+				uint v=s[ip]-0x20,t=0,z=0;
+				while(t<v)z=z*256+s[++ip],t++;
+				ull nr=newreg();generef(nr)=val(z,TNUM),*curstk=nr,curstk++;
+				break;
+			}
+			#undef loader
 			case LOADSTR:{
 				string str="";
 				ip++;
