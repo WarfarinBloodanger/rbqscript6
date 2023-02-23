@@ -581,6 +581,9 @@ codeset parse_expr(int precd){
 		chklit_strict(TOK_HAS,"has");
 		chklit_strict(TOK_CHOOSE,"or");
 		chklit_strict(TOK_IS,"is");
+		chklit_strict(TOK_ALL,"all");
+		chklit_strict(TOK_OP,"operator");
+		chklit_strict(TOK_CONSTRUCTOR,"constructor");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
