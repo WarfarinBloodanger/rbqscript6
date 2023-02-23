@@ -149,7 +149,7 @@ enum {
 	TOK_BITAND,TOK_BITOR,TOK_BITNOT,TOK_XOR,TOK_LSHF,TOK_RSHF,
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
-	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,
+	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,TOK_ALL,
 	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,TOK_OP,TOK_CONSTRUCTOR,
 	TOK_ADDE,TOK_SUBE,
 	TOK_MULE,TOK_DIVE,TOK_MODE,
@@ -160,7 +160,7 @@ const char* tokenname[]={
 	"'+'","'-'","'*'","'/'","'%'","'=='","'!='","'>'","'<'","'>='","'<='",
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
-	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'",
+	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'","'all'",
 	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'","'operator'","'constructor'",
 	"+=","-=",
 	"*=","/=","%=",
@@ -205,6 +205,7 @@ char getidtype(const string&s){
 	if(s=="var")return TOK_VAR;
 	if(s=="break")return TOK_BREAK;
 	if(s=="continue")return TOK_CTN;
+	if(s=="all")return TOK_ALL;
 	if(s=="true")return TOK_TRUE;
 	if(s=="false")return TOK_FALSE;
 	if(s=="null")return TOK_NULL;
@@ -777,6 +778,7 @@ codeset parse_obj(){
 codeset compile_if();
 codeset compile_while();
 codeset compile_for();
+codeset compile_forall();
 codeset compile_func();
 codeset compile_hold(uchar);
 codeset compile_class();
@@ -867,6 +869,8 @@ codeset compile_while(){
 	return s;
 }
 codeset compile_for(){
+	if(tok.type==TOK_ALL)return readtok(TOK_ALL),compile_forall();
+	new_scope();
 	readtok(TOK_LPR);
 	codeset s=parse_expr(0);
 	s.push_back(POP);
@@ -885,6 +889,79 @@ codeset compile_for(){
 	fillholder(b,bsize,stepsize);
 	concat(s,loadint(b.size()));
 	concat(s,b); 
+	del_scope();
+	return s;
+}
+codeset compile_forall(){
+	new_scope();
+	readtok(TOK_LPR);
+	string iter=tok.val;readtok(TOK_ID);
+	readtok(TOK_COL);
+	codeset arr=parse_expr(0);
+	readtok(TOK_RPR);
+	string I=iter+"$_I",L=iter+"$_L",V=iter+"$_V",K=iter+"$_K";
+	
+	// I=0 V=arr K=keys(V) L=len(K) 
+	codeset step1;
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(I)));
+	concat(step1,compile_num(0));
+	step1.push_back(ASSIGN);
+	step1.push_back(POP);
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(V)));
+	concat(step1,arr);
+	step1.push_back(ASSIGN);
+	step1.push_back(POP);
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(K)));
+	step1.push_back(LOADVAR),concat(step1,loadint(getid("keys")));
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(V)));
+	step1.push_back(CALL),concat(step1,loadint(1));
+	step1.push_back(ASSIGN);
+	step1.push_back(POP);
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(L)));
+	step1.push_back(LOADVAR),concat(step1,loadint(getid("len")));
+	step1.push_back(LOADVAR),concat(step1,loadint(getid(K)));
+	step1.push_back(CALL),concat(step1,loadint(1));
+	step1.push_back(ASSIGN);
+	step1.push_back(POP);
+	
+	// I<L
+	codeset step2;
+	step2.push_back(LOADVAR),concat(step2,loadint(getid(I)));
+	step2.push_back(LOADVAR),concat(step2,loadint(getid(L)));
+	step2.push_back(SML);
+	
+	// I+=1
+	codeset step3;
+	step3.push_back(LOADVAR),concat(step3,loadint(getid(I)));
+	concat(step3,compile_num(1));
+	step3.push_back(ADDE);
+	step3.push_back(POP);
+	
+	// iter=K[I]
+	codeset pre;
+	pre.push_back(LOADVAR),concat(pre,loadint(getid(iter)));
+	pre.push_back(LOADVAR),concat(pre,loadint(getid(K)));
+	pre.push_back(LOADVAR),concat(pre,loadint(getid(I)));
+	pre.push_back(GETADDR);
+	pre.push_back(ASSIGN);
+	pre.push_back(POP);
+	
+	codeset s=step1;
+	codeset expr=step2;
+	codeset step=step3;
+	concat(pre,compile());
+	codeset b=pre;
+	concat(s,expr);
+	uint stepsize=step.size();
+	uint bsize=b.size();
+	s.push_back(JUMP_IF_FALSE);
+	concat(b,step);
+	b.push_back(LOOP);
+	concat(b,loadint(b.size()+expr.size()+5));//IMPORTANT
+	fillholder(b,bsize,stepsize);
+	concat(s,loadint(b.size()));
+	concat(s,b); 
+	del_scope();
 	return s;
 }
 codeset compile_upvalue(string fid){
@@ -1989,6 +2066,22 @@ inline string reftype(ull ref){
 	}
 	return "Array";
 }
+inline val allkeys(ull ref){
+	ull id=getarrid(ref);
+	vector<val> ret;
+	for(auto a:indices[id])ret.push_back(indexval(a%arrlength));
+	ull loc=allocarr();
+	for(uint i=0;i<ret.size();i++)generef(-(loc+i))=val(ret[i]),mdfaddr(-(loc+i));
+	return val(loc,TREF);
+}
+inline val allvalues(ull ref){
+	ull id=getarrid(ref);
+	vector<val> ret;
+	for(auto a:indices[id])ret.push_back(generef(-a));
+	ull loc=allocarr();
+	for(uint i=0;i<ret.size();i++)generef(-(loc+i))=val(ret[i]),mdfaddr(-(loc+i));
+	return val(loc,TREF);
+}
 inline string ref2string(ull ref){
 	ull id=getarrid(ref);
 	stringstream ret("");
@@ -2126,8 +2219,8 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 62:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=max(retv,arg(i),[](const val&a,const val&b){return (a.smller(b)).is_true();});break;
 		case 63:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=min(retv,arg(i),[](const val&a,const val&b){return (b.smller(a)).is_true();});break;
 		case 64:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=retv+arg(i);break;
-		case 65:need(1);chktype(0,TREF);retv=arg(0).num;break;
-		case 66:need(1);chktype(0,TNUM);retv=generef(arg(0).num);break;
+		case 65:need(1);chktype(0,TREF);retv=allkeys(arg(0).num);break;
+		case 66:need(1);chktype(0,TREF);retv=allvalues(arg(0).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -2217,7 +2310,7 @@ void initvm(){
 	method("ceil"),method("floor"),method("log2");
 	makeobj("Math");
 	func("max"),func("min"),func("sum");
-	func("__address__"),func("__access__");
+	func("keys"),func("values");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
