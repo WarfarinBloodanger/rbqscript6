@@ -8,6 +8,26 @@ typedef unsigned long long ull;
 typedef const uchar OPCODE;
 typedef vector<uchar> codeset;
 OPCODE NOP=0x88;
+OPCODE LOAD0=0x10;
+OPCODE LOAD1=0x11;
+OPCODE LOAD2=0x12;
+OPCODE LOAD3=0x13;
+OPCODE LOAD4=0x14;
+OPCODE LOAD5=0x15;
+OPCODE LOAD6=0x16;
+OPCODE LOAD7=0x17;
+OPCODE LOAD8=0x18;
+OPCODE LOAD9=0x19;
+OPCODE LOAD10=0x1A;
+OPCODE LOAD11=0x1B;
+OPCODE LOAD12=0x1C;
+OPCODE LOAD13=0x1D;
+OPCODE LOAD14=0x1E;
+OPCODE LOAD15=0x1F;
+OPCODE LOAD1BIT=0x21;
+OPCODE LOAD2BIT=0x22;
+OPCODE LOAD3BIT=0x23;
+OPCODE LOAD4BIT=0x24;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
 OPCODE LOADVAR=0XA2;
@@ -143,9 +163,28 @@ void runbytes(const codeset&s){
 		#define addall() do{for(uint i=oldip;i<=ip;i++)used.push_back(s[i]);outputbc(oldip,used);}while(0)
 		switch(s[ip]){
 			default:{
-				fatal("unknown bytecode %02X at position %d",s[ip],ip);
+				addall();
+				output("<UNKNOWN>","","");
 				break;
 			}
+			#define loader(x)\
+			case LOAD##x:{\
+				addall();\
+				output("LOADNUM_"#x,""#x,"");\
+				break;\
+			}
+			loader(0) loader(1) loader(2) loader(3) 
+			loader(4) loader(5) loader(6) loader(7) 
+			loader(8) loader(9) loader(10) loader(11) 
+			loader(12) loader(13) loader(14) loader(15)
+			case LOAD1BIT:case LOAD2BIT:case LOAD3BIT:case LOAD4BIT:{
+				uint v=s[ip]-0x20,t=0,z=0;
+				while(t<v)z=z*256+s[++ip],t++;
+				addall();
+				output("LOAD"+num2str(v)+"BIT",num2str(z),"");
+				break;
+			}
+			#undef loader
 			case SEEK:{
 				addall();
 				output("SEEK","","");
