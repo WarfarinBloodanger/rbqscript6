@@ -242,7 +242,7 @@ char getidtype(const string&s){
 	if(s=="constructor")return TOK_CONSTRUCTOR;
 	return TOK_ID; 
 }
-void tokenize(char *src){
+void tokenize(char *src,int strict=1){
 	uint line=1,column=1;
 	#define chkln (line+=src[loc]=='\n',column=src[loc]=='\n'?1:column+1)
 	uint len=strlen(src);
@@ -282,9 +282,9 @@ void tokenize(char *src){
 					if(src[loc]=='\\')cur.val.push_back('\\');
 					cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				}
-				if(loc+2>=len)fatal("uncompleted multi-line string, expected '%c%c%c' at end",e,e,e);
+				if(strict&&loc+2>=len)fatal("uncompleted multi-line string, expected '%c%c%c' at end",e,e,e);
 				if(src[loc]==e)cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
-				loc+=3;
+				loc+=2;
 				cur.type=TOK_STR,toks.push_back(cur);
 			}
 			else{
@@ -404,7 +404,7 @@ void tokenize(char *src){
 				toks.push_back(cur);
 				break;
 			}
-			default:fatal("unknown char '%c' at line %d, column %d",src[loc],line,column);(chkln,loc++,loc-1);break;
+			default:if(!strict)break;fatal("unknown char '%c' at line %d, column %d",src[loc],line,column);(chkln,loc++,loc-1);break;
 		}
 	}
 }
@@ -2392,8 +2392,26 @@ namespace launcher{
 		for(auto a:s)fcout.put((char)a);
 		fcout.close(); 
 	}
-	bool chkinclude(){
-		if(tok.type==TOK_INCLUDE){readtok(TOK_INCLUDE),readtok(TOK_STR),read_source(toks[curtok-1].val);return 1;}
+	char mulline=0;
+	bool not_multiline(const string&s){
+		for(uint i=0;i+2<s.size();i++){
+			if(mulline!=0){
+				if(s[i]==mulline&&s[i+1]==mulline&&s[i+2]==mulline)mulline=0,i+=2;
+			}
+			else{
+				if((s[i]=='\''||s[i]=='\"')&&s[i+1]==s[i]&&s[i+2]==s[i])mulline=s[i],i+=2;
+			}
+		}
+		return !mulline;
+	}
+	bool chkprecmd(const string&s){
+		if(not_multiline(s)&&s[0]=='#'){
+			string t;stringstream ss("");ss<<s.substr(1);
+			vector<string> vs;while(ss>>t)vs.push_back(t);
+			if(vs[0]=="include")read_source(vs[1]);
+			else fatal("unknown command line %s",vs[0].c_str());
+			return 1;
+		}
 		else return 0;
 	}
 	void read_source(string file){
@@ -2402,9 +2420,7 @@ namespace launcher{
 			ifstream fcin(file);
 			if(!fcin){fatal("can not open file '%s'",file.c_str());return;}
 			while(getline(fcin,str)){
-				for(uint i=0;i<str.size();i++)src[i]=str[i];src[str.size()]='\0';
-				toks.clear();tokenize(src),curtok=0;
-				if(chkinclude());
+				if(chkprecmd(str));
 				else source<<str<<endl;
 			}
 		}
@@ -2448,7 +2464,8 @@ namespace launcher{
 	string start_compile(){
 		if(!files.size())fatal("need at least one input source file to compile%c",' ');
 		for(auto a:files)read_source(a);
-		start_compile2();return files[0];
+		start_compile2();
+		return files[0];
 	}
 	void run_rbq(string arg){
 		if(!arg.size())fatal("need a bytecode file to run%c",' ');
