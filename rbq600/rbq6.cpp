@@ -1169,15 +1169,16 @@ struct val;
 inline val call_op_func(const val&ref,const string&key,const val&arg);
 struct val{
 	double num,owner;
+	int is_this;
 	string str;
 	uchar type;
-	val(){type=TUNDEF;}
-	val(const double &x){type=TNUM,num=x;}
-	val(const string &s){type=TSTR,str=s;}
-	static val maketrue(){val v;v.type=TTRUE;return v;}
-	static val makefalse(){val v;v.type=TFALSE;return v;}
-	val(valtype t){type=t;}
-	val(int64_t ref,valtype t){type=t,num=ref;}
+	val(){type=TUNDEF,is_this=0;}
+	val(const double &x){type=TNUM,num=x,is_this=0;}
+	val(const string &s){type=TSTR,str=s,is_this=0;}
+	static val maketrue(){val v;v.type=TTRUE,v.is_this=0;return v;}
+	static val makefalse(){val v;v.type=TFALSE,v.is_this=0;return v;}
+	val(valtype t){type=t,is_this=0;}
+	val(int64_t ref,valtype t){type=t,num=ref,is_this=0;}
 	bool is_true()const{return !(type==TFALSE||type==TNULL||(type==TNUM&&num==0));}
 	string tostr(int strict=0)const{
 		switch(type){
@@ -1473,12 +1474,16 @@ inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
 	return 0;
 }
-inline ull getaddr(const val&addr,const val&offset){
+inline int is_private(const string&s){
+	return s.size()>4&&(s[0]=='_')&&(s[1]=='_')&&(s[s.size()-1]=='_')&&(s[s.size()-2]=='_');
+}
+inline ull getaddr(const val&addr,const val&offset,int from_this=1){
 	ull r=0;
 	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val((addr.str.size()>offset.num?((string)"")+addr.str[int(offset.num)]:""));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
 	else if(addr.type==TREF&&offset.type==TSTR){
 		if(builtin_method(addr.type,offset.str,r))return r;
+		if(is_private(offset.str)&&!from_this)fatal("Access denied: attempt to access private field '%s' from type '%s'",offset.str.c_str(),addr.gettype().c_str());
 		return(-(addr.num+getkeyhash(offset.str)));
 	}
 	else if(offset.type==TSTR){if(builtin_method(addr.type,offset.str,r))return r;}
@@ -1554,6 +1559,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				*curstk=id,curstk++;
+				generef(id).is_this=0;
 				BACK;
 			}
 			case ASSIGN:case ASSIGNLOCAL:{
@@ -1743,8 +1749,8 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				BACK;
 			}
 			case GETADDR:{
-				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)));
-				generef(nr).owner=*(curstk-2);
+				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)),generef(*(curstk-2)).is_this);
+				generef(nr).owner=*(curstk-2),generef(nr).is_this=0;
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				BACK;
@@ -1816,7 +1822,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			}
 			case LOADTHIS:{
 				if(this_obj==0)fatal("'this' should not appear in non-objective-functions%c",' ');
-				*curstk=this_obj,curstk++;
+				*curstk=this_obj,generef(*curstk).is_this=1,curstk++;
 				BACK;
 			}
 			case MAKECLASS:{
@@ -2149,7 +2155,7 @@ inline string ref2string(ull ref){
 		stringing.insert(ref);
 		ret<<"{";
 		for(auto a:indices[id]){
-			ret<<indexval(a%arrlength).tostr(1)<<":"<<generef(-a).tostr(1)<<",";
+			ret<<indexval(a%arrlength).tostr(1)<<":"<<generef(-a).tostr(1)<<", ";
 		}
 		string r=ret.str();
 		if(r.size()>1)r.back()='}';
@@ -2163,15 +2169,15 @@ inline string ref2string(ull ref){
 		ret<<"[";
 		ull last=0;
 		for(auto a:indices[id]){
-			if(last!=0&&abs(a-last)>1)ret<<"<"<<abs(a-last)-1<<" empty "<<(abs(a-last)-1>1?"slots":"slot")<<">,";
-			ret<<generef(-a).tostr(1)<<",";
+			if(last!=0&&abs(a-last)>1)ret<<"<"<<abs(a-last)-1<<" empty "<<(abs(a-last)-1>1?"slots":"slot")<<">, ";
+			ret<<generef(-a).tostr(1)<<", ";
 			last=a;
 		}
 		string r=ret.str();
 		if(r.size()>1)r.back()=']';
 		else r.push_back(']');
 		stringing.erase(stringing.find(ref));
-		return "Array "+r;
+		return r;
 	}
 }
 inline string strictstr(const string&str){
