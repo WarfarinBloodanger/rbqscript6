@@ -66,7 +66,10 @@ const string LICENSE = "See [https://github.com/WarfarinBloodanger/rbqscript6]. 
 typedef double DB;
 #define double long double
 
+const int CURRENT_VERSION=6;
 int force_short_double=0;
+int disable_constant_pool=0;
+int version_number;
 
 OPCODE NOP=0x88;
 OPCODE LOAD0=0x10;
@@ -102,6 +105,7 @@ OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
 OPCODE LOADLONGNUM=0XAC;
+OPCODE LOADCONSTANT=0XAD;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -432,6 +436,13 @@ token readtok(char type){
 	if(curtok>toks.size()||toks[curtok].type!=type)fatal("expected token %s at line %d, column %d",tokenname[(uint)type],toks[curtok].line,toks[curtok].column);
 	return toks[curtok++];
 }
+vector<string> constant_pool;
+umap<string,int> string_cid;
+int used_cid;
+inline int get_string_cid(const string&s){
+	if(string_cid.find(s)==string_cid.end())constant_pool.push_back(s),string_cid[s]=used_cid++;
+	return string_cid[s];
+}
 umap<uint,string,hasher>names;
 vector<umap<string,uint>> scopes;
 vector<uint> namecnt;
@@ -548,6 +559,10 @@ string encd(ull v){
 }
 codeset compile_str(const string&x){
 	codeset s,b;
+	if(!disable_constant_pool){
+		s.push_back(LOADCONSTANT),concat(s,loadint(get_string_cid(x.substr(1,x.size()-2))));
+		return s;
+	}
 	uint len=x.size()-1,c=0;
 	s.push_back(LOADSTR);
 	concat(s,loadint(0));
@@ -1631,6 +1646,14 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				generef(*curstk)=val(str),curstk++;
 				BACK;
 			}
+			case LOADCONSTANT:{
+				ip++;
+				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				*curstk=newreg();
+				generef(*curstk)=val(constant_pool[id]),curstk++;
+				break;
+			}
 			case LOADTRUE:{
 				ull nr=newreg();generef(nr)=val(0,TTRUE),*curstk=nr,curstk++;
 				BACK;
@@ -2518,6 +2541,19 @@ namespace launcher{
 	}
 	void savecode(const string&file,const codeset&s){
 		ofstream fcout(file.c_str(),ios::binary);
+		fcout.put(char(0x0f));
+		fcout.put(char(0xf0));
+		fcout.put(char(0x26));
+		fcout.put(char(0x56));
+		codeset g=loadint(CURRENT_VERSION);
+		for(auto a:g)fcout.put((char)a);
+		g=loadint(constant_pool.size());
+		for(auto a:g)fcout.put((char)a);
+		for(auto a:constant_pool){
+			g=loadint(a.size());
+			for(auto v:g)fcout.put(char(v));
+			for(auto v:a)fcout.put(char(v));
+		}
 		for(auto a:s)fcout.put((char)a);
 		fcout.close(); 
 	}
@@ -2601,7 +2637,32 @@ namespace launcher{
 		new_scope(),vm::initvm();codeset s;
 		ifstream fcin(arg.c_str(),ios::binary);
 		if(!fcin)fatal("can not open bytefile '%s'",arg.c_str()); 
-		char c;while(fcin.get(c))s.push_back((uchar)c);
+		char c;
+		if(fcin.get(c)&&c==0x0f){
+			if(!(fcin.get(c)&&(unsigned char)c==0xf0))fatal("uncompatible bytecode file '%s'",arg.c_str());
+			if(!(fcin.get(c)&&c==0x26))fatal("uncompatible bytecode file '%s'",arg.c_str());
+			if(!(fcin.get(c)&&c==0x56))fatal("uncompatible bytecode file '%s'",arg.c_str());
+			int g=fcin.get()*0xffffff;
+			g+=fcin.get()*0xffff;
+			g+=fcin.get()*0xff;
+			g+=fcin.get();
+			version_number=g;
+			g=fcin.get()*0xffffff;
+			g+=fcin.get()*0xffff;
+			g+=fcin.get()*0xff;
+			g+=fcin.get();
+			while(g--){
+				int r=fcin.get()*0xffffff;
+				r+=fcin.get()*0xffff;
+				r+=fcin.get()*0xff;
+				r+=fcin.get();
+				string v="";
+				while(r--)v+=fcin.get();
+				constant_pool.push_back(v);
+			}
+		}
+		else s.push_back(uchar(c));
+		while(fcin.get(c))s.push_back((uchar)c);
 		vm::runbytes(s,vector<vm::val>(),-1,vm::vmstack);
 	}
 }
