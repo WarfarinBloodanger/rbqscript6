@@ -154,9 +154,11 @@ OPCODE LOADTHIS=0XEA;
 OPCODE MAKECLASS=0XEB;
 OPCODE CONSTRUCT=0XEC;
 OPCODE CHECKTYPE=0xED;
+OPCODE LOADSUPER=0xEE;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1;
+OPCODE EXTENDACC=0XF2;
 char excpbuf[1024];
 #define fatal(str,...) do{sprintf(excpbuf,str,__VA_ARGS__);throw (string)excpbuf;}while(0)
 typedef vector<uchar> codeset;
@@ -170,10 +172,11 @@ enum {
 	TOK_COM,TOK_ASS,TOK_DOT,TOK_QUEZ,TOK_COL,
 	TOK_LPR,TOK_RPR,TOK_LBK,TOK_RBK,TOK_LBR,TOK_RBR,TOK_FEN,
 	TOK_FUNC,TOK_IF,TOK_ELSE,TOK_WHILE,TOK_RET,TOK_FOR,TOK_VAR,TOK_BREAK,TOK_CTN,TOK_ALL,
-	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,TOK_OP,TOK_CONSTRUCTOR,
+	TOK_TRUE,TOK_FALSE,TOK_NULL,TOK_UNDEFINED,TOK_INCLUDE,TOK_THIS,TOK_CLASS,TOK_NEW,TOK_HAS,TOK_TYPEOF,TOK_CHOOSE,TOK_IS,
+	TOK_OP,TOK_CONSTRUCTOR,TOK_PUB,TOK_PROT,TOK_PRIV,TOK_SUPER,
 	TOK_ADDE,TOK_SUBE,
 	TOK_MULE,TOK_DIVE,TOK_MODE,
-	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,
+	TOK_BITANDE,TOK_BITORE,TOK_XORE,TOK_LSHFE,TOK_RSHFE,TOK_ARW,
 };
 const char* tokenname[]={
 	"number","string","identifier","hexnumber",
@@ -181,10 +184,11 @@ const char* tokenname[]={
 	"'&&'","'||'","'!'","'&'","'|'","'~'","'^'","'<<'","'>>'",
 	"','","'='","'.'","'?'","':'","'('","')'","'['","']'","'{'","'}'","';'",
 	"'function'","'if'","'else'","'while'","'return'","'for'","'var'","'break'","'continue'","'all'",
-	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'","'operator'","'constructor'",
+	"'true'","'false'","'null'","'undefined'","'include'","'this'","'class'","'new'","'has'","'typeof'","'or'","'is'",
+	"'operator'","'constructor'","'public'","'protected'","'private'","'super'",
 	"+=","-=",
 	"*=","/=","%=",
-	"&=","|=","^=","<<=",">>="
+	"&=","|=","^=","<<=",">>=","->"
 };
 inline int prior(char tok){
 	switch(tok){
@@ -205,7 +209,7 @@ inline int prior(char tok){
 		case TOK_ADD:case TOK_SUB:return 110;
 		case TOK_MUL:case TOK_DIV:case TOK_MOD:return 120;
 		case TOK_NOT:case TOK_BITNOT:return 130;
-		case TOK_LPR:case TOK_LBK:case TOK_DOT:return 140; 
+		case TOK_LPR:case TOK_LBK:case TOK_DOT:case TOK_ARW:return 140; 
 		default:return 1;
 	}
 }
@@ -240,6 +244,10 @@ char getidtype(const string&s){
 	if(s=="is")return TOK_IS;
 	if(s=="operator")return TOK_OP;
 	if(s=="constructor")return TOK_CONSTRUCTOR;
+	if(s=="public")return TOK_PUB;
+	if(s=="protected")return TOK_PROT;
+	if(s=="private")return TOK_PRIV;
+	if(s=="super")return TOK_SUPER;
 	return TOK_ID; 
 }
 void tokenize(char *src,int strict=1){
@@ -318,7 +326,13 @@ void tokenize(char *src,int strict=1){
 		}
 		else switch(src[loc]){
 			case('+'):checkeql(ADD);
-			case('-'):checkeql(SUB);
+			case('-'):{
+				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
+				if(loc<len&&src[loc]=='>')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_ARW;
+				else cur.type=TOK_SUB;
+				toks.push_back(cur);
+				break;
+			}
 			case('*'):checkeql(MUL);
 			case('/'):{
 				if(loc+1<len&&src[loc+1]=='/'){
@@ -578,8 +592,9 @@ codeset compile();
 codeset compile_new();
 codeset compile_block(bool a=1);
 codeset compile_upvalue(string);
+codeset compile_lambda();
 codeset parse_args(char,uint&);
-codeset parse_params(uint&,codeset&);
+codeset parse_params(uint&,codeset&,char ender=TOK_RPR);
 codeset parse_decl();
 codeset parse_obj();
 int anfunc=0;
@@ -605,6 +620,7 @@ codeset parse_expr(int precd){
 		chklit(TOK_NULL,"null",LOADNULL);
 		chklit(TOK_UNDEFINED,"undefined",LOADUNDEFINED);
 		chklit(TOK_THIS,"this",LOADTHIS);
+		chklit(TOK_SUPER,"super",LOADSUPER);
 		chklit_strict(TOK_IF,"if");
 		chklit_strict(TOK_ELSE,"else");
 		chklit_strict(TOK_WHILE,"while");
@@ -620,6 +636,9 @@ codeset parse_expr(int precd){
 		chklit_strict(TOK_ALL,"all");
 		chklit_strict(TOK_OP,"operator");
 		chklit_strict(TOK_CONSTRUCTOR,"constructor");
+		chklit_strict(TOK_PUB,"public");
+		chklit_strict(TOK_PROT,"protected");
+		chklit_strict(TOK_PRIV,"private");
 		case TOK_VAR:{
 			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else fatal("'var' should not appear at line %d, column %d",tok.line,tok.column);
@@ -651,6 +670,7 @@ codeset parse_expr(int precd){
 		case TOK_BITNOT:readtok(TOK_BITNOT);concat(s,parse_expr(prior(TOK_BITNOT)));s.push_back(BITNOT);break;
 		case TOK_ADD:readtok(TOK_ADD);concat(s,parse_expr(130));s.push_back(POSITIVE);break;
 		case TOK_SUB:readtok(TOK_SUB);concat(s,parse_expr(130));s.push_back(NEGATIVE);break;
+		case TOK_SML:concat(s,compile_lambda());break;
 		case TOK_FUNC:{
 			if(liter)concat(s,compile_str("function")),readtok(TOK_FUNC),s.push_back(GETADDR);
 			else{
@@ -766,9 +786,9 @@ codeset parse_args(char end,uint &c){
 	}
 	return s; 
 }
-codeset parse_params(uint &c,codeset&arg){
+codeset parse_params(uint &c,codeset&arg,char ender){
 	codeset s;c=0;
-	while(tok.type!=TOK_RPR){
+	while(tok.type!=ender){
 		if(tok.type==TOK_AND)readtok(TOK_AND);
 		concat(s,loadint(getid(readtok(TOK_ID).val,1)));
 		if(tok.type==TOK_COL){
@@ -1027,6 +1047,25 @@ codeset compile_func(){
 	s.push_back(ASSIGN);
 	return s;
 }
+uint used_lambdas;
+codeset compile_lambda(){
+	codeset s,b1,b2,pc;
+	string name="$LAMBDA_"+num2str(++used_lambdas);
+	uint tmp;
+	s.push_back(LOADVAR);
+	concat(s,loadint(getid(name)));
+	new_scope();
+	s.push_back(LOADFUNC);
+	readtok(TOK_SML);b1=parse_params(tmp,pc,TOK_BIG),readtok(TOK_BIG);
+	concat(s,loadint(tmp));
+	readtok(TOK_ARW);concat(b2,pc),concat(b2,parse_expr(0)),b2.push_back(RETURN);
+	concat(s,loadint(b2.size()));
+	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
+	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
+	del_scope();
+	s.push_back(ASSIGN);
+	return s;
+}
 string getoperator(){
 	switch(tok.type){
 		#define checkret(c,s)\
@@ -1110,7 +1149,10 @@ codeset compile_class(){
 	}
 	int tot=0;
 	readtok(TOK_LBR);
+	int ext=0;codeset acc;
 	while(1){
+		int acp=2;
+		if(tok.type==TOK_PUB||tok.type==TOK_PROT||tok.type==TOK_PRIV)acp=tok.type-TOK_PUB,nexttok(),ext=1;
 		if(tok.type==TOK_VAR){
 			readtok(TOK_VAR);
 			while(1){
@@ -1143,17 +1185,19 @@ codeset compile_class(){
 			readtok(TOK_CONSTRUCTOR);
 			string mn="constructor";
 			codeset t=compile_method(mn);
-			tot++,concat(s,compile_str('"'+mn+'"'));
+			tot++,concat(s,compile_str('"'+mn+name+'"'));
 			concat(s,t);
-		} 
+		}
 		else if(tok.type==TOK_FEN)readtok(TOK_FEN);
 		else if(tok.type==TOK_RBR){readtok(TOK_RBR);break;}
 		else fatal("unexpected '%s' in the definition of class '%s'",tokenname[(uint)tok.type],name.c_str());
+		acc.push_back(acp);
 	}
 	concat(s,compile_str('"'+superclass+'"'));
 	concat(s,compile_str('"'+name+'"'));
 	s.push_back(MAKECLASS);
 	concat(s,loadint(tot));
+	if(ext)s.push_back(EXTENDACC),concat(s,acc);
 	return s;
 }
 namespace vm{
@@ -1169,16 +1213,16 @@ struct val;
 inline val call_op_func(const val&ref,const string&key,const val&arg);
 struct val{
 	double num,owner;
-	int is_this;
+	uint permission,class_type;
 	string str;
 	uchar type;
-	val(){type=TUNDEF,is_this=0;}
-	val(const double &x){type=TNUM,num=x,is_this=0;}
-	val(const string &s){type=TSTR,str=s,is_this=0;}
-	static val maketrue(){val v;v.type=TTRUE,v.is_this=0;return v;}
-	static val makefalse(){val v;v.type=TFALSE,v.is_this=0;return v;}
-	val(valtype t){type=t,is_this=0;}
-	val(int64_t ref,valtype t){type=t,num=ref,is_this=0;}
+	val(){type=TUNDEF,permission=1,class_type=0;}
+	val(const double &x){type=TNUM,num=x,permission=1,class_type=0;}
+	val(const string &s){type=TSTR,str=s,permission=1,class_type=0;}
+	static val maketrue(){val v;v.type=TTRUE,v.permission=1,v.class_type=0;return v;}
+	static val makefalse(){val v;v.type=TFALSE,v.permission=1,v.class_type=0;return v;}
+	val(valtype t){type=t,permission=1,class_type=0;}
+	val(int64_t ref,valtype t){type=t,num=ref,permission=1,class_type=0;}
 	bool is_true()const{return !(type==TFALSE||type==TNULL||(type==TNUM&&num==0));}
 	string tostr(int strict=0)const{
 		switch(type){
@@ -1313,20 +1357,36 @@ struct val{
 	val choose(const val&b)const{checkop(CHOOSE);return type==TUNDEF||type==TNULL?b:(*this);}
 };
 inline val initarr(const vector<val>&v,const vector<val>&id);
+enum{SYSTEM_PERMISSION,GUEST_PERMISSION,THIS_PERMISSION,SUPER_PERMISSION};
+const string permission_name[4]={(string)"system",(string)"guest",(string)"this",(string)"super"};
+const string access_name[3]={(string)"public",(string)"protected",(string)"private"};
+enum{PUBLIC,PROTECTED,PRIVATE};
 namespace object_manager{
 	struct class_info{
 		umap<string,val>field;
+		umap<string,char>access;
+		umap<string,string>owner;
 		string class_name,super_class;
+		uint id;
 	};
+	uint used_cls_id;
+	vector<string>used_cls;
 	umap<string,class_info>classes;
-	void make_class(const string&class_name,const string&super_class,const umap<string,val>&field,int chk=1){
+	inline string get_super_class(const string&c){return classes[c].super_class;}
+	inline uint get_class_id(const string&c){return classes[c].id;}
+	inline uint get_super_class(uint id){return get_class_id(get_super_class(used_cls[id]));}
+	void make_class(const string&class_name,const string&super_class,const umap<string,val>&field,const umap<string,int>&access,int chk=1){
 		if(chk&&class_name=="object")fatal("attempting to make class named 'object'%c",' ');
 		if(chk&&classes.find(super_class)==classes.end())fatal("cannot find class '%s'",super_class.c_str());
 		if(chk&&class_name==super_class)fatal("attempting to make class '%s' based on itself",class_name.c_str());
 		const auto&super=classes[super_class];
 		auto&curcl=classes[class_name];
 		curcl.field=super.field;
-		for(const auto&a:field)curcl.field.insert(a);
+		curcl.access=super.access;
+		curcl.owner=super.owner;
+		curcl.id=used_cls_id++,used_cls.push_back(class_name);
+		for(const auto&a:field)curcl.field[a.first]=a.second,curcl.owner[a.first]=class_name;
+		for(const auto&a:access)curcl.access[a.first]=a.second;
 		curcl.super_class=super_class;
 		curcl.class_name=class_name;
 	}
@@ -1334,14 +1394,14 @@ namespace object_manager{
 		if(classes.find(class_name)==classes.end())fatal("cannot find class '%s'",class_name.c_str());
 		const auto&curcl=classes[class_name];
 		vector<val> vid,f; 
+		vid.emplace_back("__class__"),f.emplace_back(class_name);
+		vid.emplace_back("__super_class__"),f.emplace_back(curcl.super_class);
 		for(auto a:curcl.field){
 			string fn=a.first;
 			val v=a.second;
 			vid.emplace_back(fn);
 			f.emplace_back(v);
 		}
-		vid.emplace_back("__class__"),f.emplace_back(class_name);
-		vid.emplace_back("__super_class__"),f.emplace_back(curcl.super_class);
 		return initarr(f,vid);
 	}
 	int is_subclass_of(string sub,const string&fa){
@@ -1352,6 +1412,35 @@ namespace object_manager{
 			sub=classes[sub].super_class;
 		}while(sub!="object");
 		return 0;
+	}
+	bool check_access(string class_name,const string&field,char permission,uint class_type,string&owner){
+		if(classes.find(class_name)==classes.end())fatal("cannot find class '%s'",class_name.c_str());
+//		cout<<"Access: "<<field<<endl;
+//		cout<<"\tpermission: "<<permission_name[uint(permission)]<<endl;
+//		cout<<"\tclass_type: "<<class_type<<" or also "<<used_cls[class_type]<<endl;
+//		cout<<"\tprototype: "<<class_name<<endl;
+		auto&fields=classes[class_name].field;
+		if(fields.find(field)==fields.end())return true;
+		auto&access=classes[class_name].access[field];
+		owner=classes[class_name].owner[field];
+		if(class_type==0)class_type=get_class_id(class_name);
+		class_name=used_cls[class_type];
+		switch(permission){
+			case SYSTEM_PERMISSION:return true;
+			case GUEST_PERMISSION:if(access!=PUBLIC)fatal("field '%s' of class '%s' is %s",field.c_str(),class_name.c_str(),access_name[(uint)access].c_str());break;
+			case THIS_PERMISSION:{
+				if(owner!=class_name&&(access==PRIVATE))fatal("field '%s' of class '%s' is from class '%s', did you mean 'super'?",field.c_str(),class_name.c_str(),owner.c_str());
+				break;
+			}
+			case SUPER_PERMISSION:{
+				if(owner==class_name)fatal("field '%s' of class '%s' belongs to itself, did you mean 'this'?",field.c_str(),class_name.c_str());
+				if(access==PRIVATE)fatal("field '%s' of class '%s' is from class '%s', which is private",field.c_str(),class_name.c_str(),owner.c_str());
+				break;
+			}
+			default:fatal("unknown permission given (level: %d)",(int)permission);
+		}
+		
+		return true;
 	}
 }
 template <typename T>
@@ -1474,17 +1563,19 @@ inline int builtin_method(char type,const string&s,ull&r){
 	if(builtinmethod[type].find(s)!=builtinmethod[type].end())return r=builtinmethod[type][s],1;
 	return 0;
 }
-inline int is_private(const string&s){
-	return s.size()>4&&(s[0]=='_')&&(s[1]=='_')&&(s[s.size()-1]=='_')&&(s[s.size()-2]=='_');
+inline int access_level(const string&t,const string&f){
+	if(vm::object_manager::classes.find(t)==vm::object_manager::classes.end())return 0;
+	return vm::object_manager::classes[t].access[f];
 }
-inline ull getaddr(const val&addr,const val&offset,int from_this=1){
+string getaddr_returnval;
+inline ull getaddr(const val&addr,const val&offset,char permission=SYSTEM_PERMISSION,int class_type=0){
 	ull r=0;
 	if(addr.type==TSTR&&offset.type==TNUM){generef(r=newreg())=val((addr.str.size()>offset.num?((string)"")+addr.str[int(offset.num)]:""));return r;}
 	else if(addr.type==TREF&&offset.type==TNUM)return(-(addr.num+offset.num));
 	else if(addr.type==TREF&&offset.type==TSTR){
 		if(builtin_method(addr.type,offset.str,r))return r;
-		if(is_private(offset.str)&&!from_this)fatal("Access denied: attempt to access private field '%s' from type '%s'",offset.str.c_str(),addr.gettype().c_str());
-		return(-(addr.num+getkeyhash(offset.str)));
+		if(permission!=SYSTEM_PERMISSION&&!object_manager::check_access(addr.gettype(),offset.str,permission,class_type,getaddr_returnval))fatal("Access denied: attempt to access private field '%s' from type '%s'",offset.str.c_str(),addr.gettype().c_str());
+		return (-(addr.num+getkeyhash(offset.str)));
 	}
 	else if(offset.type==TSTR){if(builtin_method(addr.type,offset.str,r))return r;}
 	else fatal("operation '[]' can't be applied between '%s' and '%s'",valtypename[addr.type],valtypename[offset.type]);
@@ -1495,17 +1586,19 @@ inline ull newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&u
 	for(auto a:upvs)upvalueframe[usedfuncs][a]=generef(a);
 	return usedfuncs;
 }
-ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0);
-int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_start,ull this_obj=0){
+ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj=0,uint this_type=0);
+int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_start,ull this_obj=0,uint this_type=0){
 	uint ip=0,len=s.size();
 	runstack curstk=stk_start;
-	stack<ull>cur_this_obj;
 	#define BACK\
 	ip++;\
 	goto DECODE
 	while(ip<len){
 		DECODE:
 		if(ip>=len)break;
+//		printf("ip=%d, code=%X\n",ip,s[ip]);
+//		for(runstack i=stk_start;i<curstk;i++)cout<<"\t"<<generef(*i).tostr()<<" ["<<permission_name[generef(*i).permission]<<"]"<<" <class "<<object_manager::used_cls[generef(*i).class_type]<<">"<<endl;
+//		cout<<endl;
 		switch(s[ip]){
 			default:{
 				fatal("unknown bytecode %02X at position %d",s[ip],ip);
@@ -1559,7 +1652,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				*curstk=id,curstk++;
-				generef(id).is_this=0;
+				generef(id).permission=GUEST_PERMISSION;
 				BACK;
 			}
 			case ASSIGN:case ASSIGNLOCAL:{
@@ -1749,8 +1842,8 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				BACK;
 			}
 			case GETADDR:{
-				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)),generef(*(curstk-2)).is_this);
-				generef(nr).owner=*(curstk-2),generef(nr).is_this=0;
+				ull nr=getaddr(generef(*(curstk-2)),generef(*(curstk-1)),generef(*(curstk-2)).permission,generef(*(curstk-2)).class_type);
+				generef(nr).owner=*(curstk-2),generef(nr).permission=GUEST_PERMISSION,generef(nr).class_type=object_manager::get_class_id(getaddr_returnval);
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 				curstk--,*(curstk-1)=nr;
 				BACK;
@@ -1776,7 +1869,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			}
 			case CALL:{
 				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],argscnt_=argscnt;
 				ip+=3;
 				vector<ull> args,freelist;
 				while(argscnt--){
@@ -1784,12 +1877,31 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
 					curstk--;
 				}
-				if(generef(*(curstk-1)).type!=TFUNC)fatal("can't call a non-function type '%s'(%s)",valtypename[generef(*(curstk-1)).type],generef(*(curstk-1)).tostr().c_str());
-				
-				ull fid=generef(*(curstk-1)).num,_this=generef(*(curstk-1)).owner;
-				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
-				curstk--;
-				ull nr=call_func(fid,args,curstk,_this);*curstk=nr,curstk++;
+				ull fid,_this,_type;
+				uint permission=generef(*(curstk-1)).permission,class_type=generef(*(curstk-1)).class_type;
+				switch(permission){
+					case THIS_PERMISSION:case SUPER_PERMISSION:{
+						string clsname=generef(*(curstk-1)).gettype();
+						if(permission==SUPER_PERMISSION)clsname=object_manager::get_super_class(clsname);
+						ull nr=newreg();
+						string constructor_name="__constructor_"+num2str(argscnt_)+"__"+clsname;
+						if(!hasfield(generef(*(curstk-1)),constructor_name).is_true()){
+							if(argscnt)fatal("class '%s' has no constructor receiving %d argument%c",clsname.c_str(),argscnt_,argscnt==1?' ':'s');
+							else break;
+						}
+						if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
+						_this=nr,fid=generef(getaddr(generef(*(curstk-1)),constructor_name)).num;
+						nr=call_func(fid,args,curstk,*(curstk-1),object_manager::get_class_id(clsname));curstk--;*curstk=nr,curstk++;
+						break;
+					}
+					default:{
+						if(generef(*(curstk-1)).type!=TFUNC)fatal("can't call a non-function type '%s'(%s)",valtypename[generef(*(curstk-1)).type],generef(*(curstk-1)).tostr().c_str());
+						fid=generef(*(curstk-1)).num,_this=generef(*(curstk-1)).owner,_type=generef(*(curstk-1)).class_type;
+						if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
+						curstk--;ull nr=call_func(fid,args,curstk,_this,_type);*curstk=nr,curstk++;
+						break;
+					}
+				}	
 				for(auto a:freelist)freereg(a);
 				BACK;
 			}
@@ -1822,7 +1934,12 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			}
 			case LOADTHIS:{
 				if(this_obj==0)fatal("'this' should not appear in non-objective-functions%c",' ');
-				*curstk=this_obj,generef(*curstk).is_this=1,curstk++;
+				*curstk=this_obj,generef(*curstk).permission=THIS_PERMISSION,generef(*curstk).class_type=this_type,curstk++;
+				BACK;
+			}
+			case LOADSUPER:{
+				if(this_obj==0)fatal("'super' should not appear in non-objective-functions%c",' ');
+				*curstk=this_obj,generef(*curstk).permission=SUPER_PERMISSION,generef(*curstk).class_type=this_type,curstk++;
 				BACK;
 			}
 			case MAKECLASS:{
@@ -1833,7 +1950,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
 				string supname=generef(*(curstk-1)).str;
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));curstk--;
-				umap<string,val>raw;
+				umap<string,val>raw;umap<string,int>access;vector<string>fields;
 				while(fieldcnt--){
 					val v=generef(*(curstk-1));
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
@@ -1841,9 +1958,14 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 					string key=(generef(*(curstk-1)).str);
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
-					raw[key]=v;
+					fields.push_back(key),raw[key]=v,access[key]=0;
 				}
-				object_manager::make_class(clsname,supname,raw);
+				reverse(fields.begin(),fields.end());
+				if(s[ip+1]==EXTENDACC){
+					ip++;
+					for(auto a:fields)access[a]=s[++ip];
+				}
+				object_manager::make_class(clsname,supname,raw,access);
 				break;
 			}
 			case CONSTRUCT:{
@@ -1863,13 +1985,14 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				ull newobj=newreg();
 				generef(newobj)=object_manager::construct(clsname);
 				*curstk=newobj,curstk++;
-				string constructor_name="__constructor_"+num2str(argscnt_)+"__";
+				string constructor_name="__constructor_"+num2str(argscnt_)+"__"+clsname;
 				if(!hasfield(generef(newobj),constructor_name).is_true()){
 					if(argscnt_)fatal("class '%s' has no constructor receiving %d argument%c",generef(newobj).gettype().c_str(),argscnt_,argscnt==1?' ':'s');
 					else break;
 				}
 				ull fid=generef(getaddr(generef(newobj),constructor_name)).num,_this=newobj;
-				call_func(fid,args,curstk,_this);
+				call_func(fid,args,curstk,_this,object_manager::get_class_id(clsname));
+				generef(newobj).permission=GUEST_PERMISSION,generef(newobj).class_type=object_manager::get_class_id(clsname);
 				break;
 			}
 			case CHECKTYPE:{
@@ -2287,7 +2410,7 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 	int nr=newreg();generef(nr)=retv;
 	return nr;
 }
-inline ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj){
+inline ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull this_obj,uint this_type){
 	if(builtin.find(fid)!=builtin.end())return call_builtin(fid,args,this_obj);
 	const vector<int> &pid=functable[fid].pid;
 	if(functable[fid].pid.size()<args.size())fatal("function at %d needs at most %lld argument(s), %lld given",fid,functable[fid].pid.size(),args.size());
@@ -2295,7 +2418,7 @@ inline ull call_func(const int&fid,const vector<ull>&args,runstack stk_start,ull
 	for(uint i=0;i<args.size();i++)ag[i]=generef(args[args.size()-1-i]);
 	uint oldsize=frames.size();newframe();funcstack.push_back(fid);
 	for(uint i=0;i<ag.size();i++)generef(pid[i],1)=ag[i];
-	int ret=runbytes(functable[fid].instr,ag,fid,stk_start,this_obj);
+	int ret=runbytes(functable[fid].instr,ag,fid,stk_start,this_obj,this_type);
 	val v=generef(ret);
 	while(oldsize<frames.size())delframe();funcstack.pop_back();
 	int nr=newreg();
@@ -2375,8 +2498,8 @@ void initvm(){
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
-	object_manager::make_class("object","object",umap<string,val>(),0);
-	object_manager::make_class("Array","object",umap<string,val>(),0);
+	object_manager::make_class("object","object",umap<string,val>(),umap<string,int>(),0);
+	object_manager::make_class("Array","object",umap<string,val>(),umap<string,int>(),0);
 	#undef func
 	#undef method
 	#undef makeobj
