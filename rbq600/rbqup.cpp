@@ -7,6 +7,7 @@ typedef unsigned char uchar;
 typedef unsigned long long ull;
 typedef const uchar OPCODE;
 typedef vector<uchar> codeset;
+vector<string> constant_pool;
 OPCODE NOP=0x88;
 OPCODE LOAD0=0x10;
 OPCODE LOAD1=0x11;
@@ -41,6 +42,7 @@ OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
 OPCODE LOADLONGNUM=0XAC;
+OPCODE LOADCONSTANT=0XAD;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -96,6 +98,7 @@ OPCODE CHECKTYPE=0xED;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1;
+OPCODE EXTENDACC=0XF2;
 char excpbuf[1024];
 #define fatal(str,...) do{sprintf(excpbuf,str,__VA_ARGS__);throw (string)excpbuf;}while(0)
 void output(string opname,const string&value,const string&comment){
@@ -202,6 +205,15 @@ void runbytes(const codeset&s){
 				if(str.size()>12)str=str.substr(0,8)+"...'";
 				addall();
 				output("LOADSTR",str,"length="+num2str(t));
+				break;
+			}
+			case LOADCONSTANT:{
+				ip++;
+				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				string str=constant_pool[id];
+				addall();
+				output("LOADCONSTANT","'"+str+"'","length="+num2str(str.size()));
 				break;
 			}
 			case LOADTRUE:{
@@ -460,6 +472,11 @@ void runbytes(const codeset&s){
 				output("CHECKTYPE",num2str(argnum),"check arg "+num2str(argnum));
 				break;
 			}
+			case EXTENDACC:{
+				addall();
+				output("EXTENDACC","","");
+				break;
+			}
 		}
 		oldip=++ip;
 	}
@@ -477,11 +494,37 @@ void seekcode(const func&f){
 void initvm(){
 	usedfuncs=1024;
 }
+int version_number;
 void see(string arg){
 	codeset s;
 	ifstream fcin(arg,ios::binary);
-	char c;while(fcin.get(c))s.push_back((uchar)c);
+	char c;
+	if(fcin.get(c)&&c==0x0f){
+		if(!(fcin.get(c)&&(unsigned char)c==0xf0))fatal("uncompatible bytecode file '%s'",arg.c_str());
+		if(!(fcin.get(c)&&c==0x26))fatal("uncompatible bytecode file '%s'",arg.c_str());
+		if(!(fcin.get(c)&&c==0x56))fatal("uncompatible bytecode file '%s'",arg.c_str());
+		int g=fcin.get()*0xffffff;
+		g+=fcin.get()*0xffff;
+		g+=fcin.get()*0xff;
+		g+=fcin.get();
+		version_number=g;
+		g=fcin.get()*0xffffff;
+		g+=fcin.get()*0xffff;
+		g+=fcin.get()*0xff;
+		g+=fcin.get();
+		while(g--){
+			int r=fcin.get()*0xffffff;
+			r+=fcin.get()*0xffff;
+			r+=fcin.get()*0xff;
+			r+=fcin.get();
+			string v="";
+			while(r--)v+=fcin.get();
+			constant_pool.push_back(v);
+		}
+	}
+	while(fcin.get(c))s.push_back((uchar)c);
 	newfunc(vector<int>(),s,vector<int>());
+	cout<<"Version Number: "<<version_number<<endl;
 	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();fcin.close();
 }
 int main(int argc,char **argv){
