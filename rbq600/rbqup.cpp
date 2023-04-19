@@ -7,7 +7,9 @@ typedef unsigned char uchar;
 typedef unsigned long long ull;
 typedef const uchar OPCODE;
 typedef vector<uchar> codeset;
-vector<string> constant_pool;
+vector<string> str_pool;
+vector<double> num_pool;
+
 OPCODE NOP=0x88;
 OPCODE LOAD0=0x10;
 OPCODE LOAD1=0x11;
@@ -29,6 +31,33 @@ OPCODE LOAD1BIT=0x21;
 OPCODE LOAD2BIT=0x22;
 OPCODE LOAD3BIT=0x23;
 OPCODE LOAD4BIT=0x24;
+OPCODE LOCALVAR1B=0X90;
+OPCODE LOCALVAR2B=0X91;
+OPCODE LOCALVAR3B=0X92;
+OPCODE NUMSLOT1B=0X93;
+OPCODE NUMSLOT2B=0X94;
+OPCODE NUMSLOT3B=0X95;
+OPCODE NUMSLOT=0XEF;
+OPCODE STRSLOT1B=0X96;
+OPCODE STRSLOT2B=0X97;
+OPCODE STRSLOT3B=0X98;
+OPCODE CALL1B=0X99;
+OPCODE CALL2B=0X9A;
+OPCODE CALL3B=0X9B;
+OPCODE FUNCSLOT1B=0X9C;
+OPCODE FUNCSLOT2B=0X9D;
+OPCODE FUNCSLOT3B=0X9E;
+OPCODE FUNCSLOT=0X9F;
+OPCODE LOOP3B=0X81;
+OPCODE CONSTRUCT1B=0X82;
+OPCODE CONSTRUCT2B=0X83;
+OPCODE CONSTRUCT3B=0X84;
+OPCODE AND1B=0X85;
+OPCODE AND2B=0X86;
+OPCODE AND3B=0X87;
+OPCODE OR1B=0X88;
+OPCODE OR2B=0X89;
+OPCODE OR3B=0X8A;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
 OPCODE LOADVAR=0XA2;
@@ -42,7 +71,7 @@ OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
 OPCODE LOADLONGNUM=0XAC;
-OPCODE LOADCONSTANT=0XAD;
+OPCODE STRSLOT=0XAD;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -95,6 +124,7 @@ OPCODE LOADTHIS=0XEA;
 OPCODE MAKECLASS=0XEB;
 OPCODE CONSTRUCT=0XEC;
 OPCODE CHECKTYPE=0xED;
+OPCODE LOADSUPER=0xEE;
 OPCODE SEEK=0XFF;
 OPCODE BREAKHOLDER=0XF0;
 OPCODE CTNHOLDER=0XF1;
@@ -123,6 +153,7 @@ void outputbc(uint ip,const codeset&s){
 	}
 	if(s.size()%9)while(i%9)printf("   "),i++;
 }
+int force_short_double;
 struct bitparse{
 	union{
 		double x;
@@ -140,22 +171,27 @@ struct bitparse8{
 struct func{
 	vector<int> pid,upvs;
 	codeset instr;
-	int id;
+	string id;
 };
+char buf[24];
+string num2str(const double&d){
+	sprintf(buf,"%.12Lg",d);return buf;
+}
+vector<func> func_pool;
+inline uint func_slot(const vector<int>&pid,const codeset&instr,const vector<int>&upvs){
+	func_pool.push_back((func){pid,upvs,instr,"_constant_pool_slot_"+num2str(func_pool.size())});
+	return func_pool.size()-1;
+}
 bitparse bpser; 
 bitparse8 bpser8; 
-char buf[24];
 map<int,string>builtin;
 string chkid(int id){
 	return builtin[id];
 }
-string num2str(const double&d){
-	sprintf(buf,"%.12Lg",d);return buf;
-}
 queue<func> funcq;
 int usedfuncs=1024;
 inline int newfunc(const vector<int>&pid,const codeset&instr,const vector<int>&upvs){
-	func f;usedfuncs++,f.id=usedfuncs,f.pid=pid,f.instr=instr,f.upvs=upvs;
+	func f;usedfuncs++,f.id=num2str(usedfuncs),f.pid=pid,f.instr=instr,f.upvs=upvs;
 	funcq.push(f);
 	return usedfuncs;
 }
@@ -207,13 +243,44 @@ void runbytes(const codeset&s){
 				output("LOADSTR",str,"length="+num2str(t));
 				break;
 			}
-			case LOADCONSTANT:{
-				ip++;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
-				string str=constant_pool[id];
+			case STRSLOT:case STRSLOT1B:case STRSLOT2B:case STRSLOT3B:{
+				uchar a=s[ip++];
+				uint id;string t;
+				switch(a){
+					case STRSLOT1B:id=s[ip],t="STRSLOT1B";break;
+					case STRSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1,t="STRSLOT2B";break;
+					case STRSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2,t="STRSLOT3B";break;
+					case STRSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3,t="STRSLOT";break;
+				}
+				string str=str_pool[id];
 				addall();
-				output("LOADCONSTANT","'"+str+"'","length="+num2str(str.size()));
+				output(t,"'"+str+"'","length="+num2str(str.size()));
+				break;
+			}
+			case NUMSLOT:case NUMSLOT1B:case NUMSLOT2B:case NUMSLOT3B:{
+				uchar a=s[ip++];
+				uint id;string t;
+				switch(a){
+					case NUMSLOT1B:id=s[ip],t="NUMSLOT1B";break;
+					case NUMSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1,t="NUMSLOT2B";break;
+					case NUMSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2,t="NUMSLOT3B";break;
+					case NUMSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3,t="NUMSLOT";break;
+				}
+				addall();
+				output(t,num2str(num_pool[id]),"");
+				break;
+			}
+			case FUNCSLOT1B:case FUNCSLOT2B:case FUNCSLOT3B:case FUNCSLOT:{
+				uchar a=s[ip++];
+				uint id;string t;
+				switch(a){
+					case FUNCSLOT1B:id=s[ip],t="FUNCSLOT1B";break;
+					case FUNCSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1,t="FUNCSLOT2B";break;
+					case FUNCSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2,t="FUNCSLOT3B";break;
+					case FUNCSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3,t="FUNCSLOT";break;
+				}
+				addall();
+				output(t,num2str(id),"size="+num2str(func_pool[id].instr.size()));
 				break;
 			}
 			case LOADTRUE:{
@@ -241,12 +308,37 @@ void runbytes(const codeset&s){
 				output("LOADTHIS","","");
 				break;
 			}
-			case LOADVAR:case LOADVARLOCAL:{
-				ip++;uint oip=ip;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
+			case LOADSUPER:{
 				addall();
-				output(s[oip]==LOADVAR?"LOADVAR":"LOADVARLOCAL","$"+num2str(id),chkid(id));
+				output("LOADSUPER","","");
+				break;
+			}
+			
+			#define multi(A,b,c,d)\
+			case A:case b:case c:case d:{\
+				uchar a=s[ip++];\
+				uint id;string t;\
+				switch(a){\
+					case A:id=s[ip],t=#A;break;\
+					case b:id=s[ip]*0xff+s[ip+1],ip+=1,t=#b;break;\
+					case c:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2,t=#c;break;\
+					case d:case LOADVARLOCAL:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3,t=#d;break;\
+				}\
+				addall();\
+				output(t,num2str(id),"");\
+				break;\
+			}
+			case LOADVAR:case LOADVARLOCAL:case LOCALVAR1B:case LOCALVAR2B:case LOCALVAR3B:{
+				uchar a=s[ip++];
+				uint id;string t;
+				switch(a){
+					case LOCALVAR1B:id=s[ip],t="LOCALVAR1B";break;
+					case LOCALVAR2B:id=s[ip]*0xff+s[ip+1],ip+=1,t="LOCALVAR2B";break;
+					case LOCALVAR3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2,t="LOCALVAR3B";break;
+					case LOADVAR:case LOADVARLOCAL:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3,t=a==LOADVAR?"LOADVAR":"LOADLOCALVAR";break;
+				}
+				addall();
+				output(t,num2str(id),"");
 				break;
 			}
 			case ASSIGN:case ASSIGNLOCAL:{
@@ -335,20 +427,8 @@ void runbytes(const codeset&s){
 			MATH(LSHF,<<);
 			MATH(RSHF,>>);
 			MATH(XOR,^);
-			case AND:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
-				addall();
-				output("AND",num2str(offset),"jump to "+num2str(ip+offset+1));
-			}
-			case OR:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
-				addall();
-				output("OR",num2str(offset),"jump to "+num2str(ip+offset+1));
-			}
+			multi(AND1B,AND2B,AND3B,AND)
+			multi(OR1B,OR2B,OR3B,OR)
 			MATH(HAS,?)
 			MATH(CHOOSE,?)
 			MATH(ISA,?)
@@ -402,41 +482,34 @@ void runbytes(const codeset&s){
 				output("LOADFUNC","","set to <"+num2str(fid)+">");
 				break;
 			}
-			case CALL:{
+			multi(CALL1B,CALL2B,CALL3B,CALL)
+			case JUMP:{
 				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				addall();
-				output("CALL",num2str(argscnt),"");
+				output("JUMP",num2str(f),"to "+num2str(ip+4+f));
+				break;
+			}
+			case JUMP_IF_FALSE:{
+				ip++;
+				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				addall();
+				output("JUMP_IF_FALSE",num2str(f),"to "+num2str(ip+4+f));
+				break;
+			}
+			case LOOP:{
+				ip++;
+				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+				ip+=3;
+				addall();
+				output("LOOP",num2str(f),"to "+num2str(ip-f));
 				break;
 			}
 			case RETURN:{
 				addall();
 				output("RETURN","","");
-				break;
-			}
-			case JUMP:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3; 
-				addall();
-				output("JUMP",num2str(offset),"jump to "+num2str(ip+offset+1));
-				break;
-			}
-			case JUMP_IF_FALSE:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
-				addall();
-				output("JUMP_IF_FALSE",num2str(offset),"jump to "+num2str(ip+offset+1));
-				break;
-			}
-			case LOOP:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
-				addall();
-				output("LOOP",num2str(offset),"loop to "+num2str(ip-1-offset+1-3));
 				break;
 			}
 			case NEWFRAME:{
@@ -455,15 +528,15 @@ void runbytes(const codeset&s){
 				ip+=3;
 				addall();
 				output("MAKECLASS",num2str(fieldcnt),num2str(fieldcnt)+" field"+(fieldcnt==1?"":"s"));
+				if(ip+1<s.size()&&s[ip+1]==EXTENDACC){
+					used.clear(),oldip=++ip;
+					while(fieldcnt--)++ip;
+					addall();
+					output("EXTENDACC","","");
+				}
 				break;
 			}
-			case CONSTRUCT:{
-				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];ip+=3;
-				addall();
-				output("CONSTRUCT",num2str(argscnt),num2str(argscnt)+" arg"+(argscnt==1?"":"s"));
-				break;
-			}
+			multi(CONSTRUCT1B,CONSTRUCT2B,CONSTRUCT3B,CONSTRUCT)
 			case CHECKTYPE:{
 				ip++;
 				uint argnum=s[ip]*0xff+s[ip+1];
@@ -495,6 +568,9 @@ void initvm(){
 	usedfuncs=1024;
 }
 int version_number;
+inline int read2b(ifstream&fcin){int g=fcin.get()*0xff;g+=fcin.get();return g;}
+inline int read4b(ifstream&fcin){int g=fcin.get()*0xffffff;g+=fcin.get()*0xffff;g+=fcin.get()*0xff;g+=fcin.get();return g;}
+int nxtf=0;
 void see(string arg){
 	codeset s;
 	ifstream fcin(arg,ios::binary);
@@ -503,37 +579,52 @@ void see(string arg){
 		if(!(fcin.get(c)&&(unsigned char)c==0xf0))fatal("uncompatible bytecode file '%s'",arg.c_str());
 		if(!(fcin.get(c)&&c==0x26))fatal("uncompatible bytecode file '%s'",arg.c_str());
 		if(!(fcin.get(c)&&c==0x56))fatal("uncompatible bytecode file '%s'",arg.c_str());
-		int g=fcin.get()*0xffffff;
-		g+=fcin.get()*0xffff;
-		g+=fcin.get()*0xff;
-		g+=fcin.get();
-		version_number=g;
-		g=fcin.get()*0xffffff;
-		g+=fcin.get()*0xffff;
-		g+=fcin.get()*0xff;
-		g+=fcin.get();
+		version_number=read4b(fcin),force_short_double=fcin.get(); 
+		int g;
+		g=read4b(fcin);
+		if(force_short_double)while(g--){for(int i=0;i<8;i++)bpser8.bits[i]=fcin.get();num_pool.push_back(bpser8.x);}
+		else while(g--){for(int i=0;i<16;i++)bpser.bits[i]=fcin.get();num_pool.push_back(bpser.x);}
+		g=read4b(fcin);
 		while(g--){
-			int r=fcin.get()*0xffffff;
-			r+=fcin.get()*0xffff;
-			r+=fcin.get()*0xff;
-			r+=fcin.get();
-			string v="";
-			while(r--)v+=fcin.get();
-			constant_pool.push_back(v);
+			int r=read4b(fcin);string v="";
+			while(r--)v+=fcin.get();str_pool.push_back(v);
+		}
+		g=read4b(fcin);
+		while(g--){
+			int pidlen=read2b(fcin),instrlen=read4b(fcin),upvslen=read2b(fcin);
+			vector<int>pid,upvs;codeset instr;
+			while(pidlen--)pid.push_back(read2b(fcin));
+			while(instrlen--)instr.push_back(fcin.get());
+			while(upvslen--)upvs.push_back(read2b(fcin));
+			func_slot(pid,instr,upvs);
 		}
 	}
+	else s.push_back(uchar(c)); 
 	while(fcin.get(c))s.push_back((uchar)c);
 	newfunc(vector<int>(),s,vector<int>());
 	cout<<"Version Number: "<<version_number<<endl;
-	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();fcin.close();
+	if(nxtf){
+		cout<<"String Constant Pool ( size="<<str_pool.size()<<" )"<<endl;
+		int t=0;
+		for(auto a:str_pool)printf("[%04d]    '%s'\n",t++,(a.size()<=20?a:a.substr(0,17)+"...").c_str());
+		cout<<"\nNumber Constant Pool ( size="<<num_pool.size()<<" )"<<endl;
+		t=0;
+		for(auto a:num_pool)printf("[%04d]    %.12Lg\n",t++,a);
+	}
+	while(!funcq.empty())seekcode(funcq.front()),funcq.pop();
+	for(auto a:func_pool)seekcode(a);
+	fcin.close();
 }
 int main(int argc,char **argv){
 	try{	
 		if(argc<=1)exit(puts("Usage: rbqup <file1> <file2>...")&&1);
 		initvm();
 		int v=1;for(;v<argc;v++){
-			printf("\n--- File '%s' ---",argv[v]);
-			usedfuncs=1024,see(argv[v]);
+			if(argv[v][0]=='-'&&argv[v][1]=='f')nxtf=1;
+			else{
+				printf("\n--- File '%s' ---",argv[v]);
+				usedfuncs=1024,see(argv[v]),nxtf=0;
+			}
 		} 
 	}
 	catch(string&s){
