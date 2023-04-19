@@ -68,7 +68,6 @@ typedef double DB;
 
 const int CURRENT_VERSION=6;
 int force_short_double=0;
-int disable_constant_pool=0;
 int version_number;
 
 OPCODE NOP=0x88;
@@ -92,6 +91,32 @@ OPCODE LOAD1BIT=0x21;
 OPCODE LOAD2BIT=0x22;
 OPCODE LOAD3BIT=0x23;
 OPCODE LOAD4BIT=0x24;
+OPCODE LOCALVAR1B=0X90;
+OPCODE LOCALVAR2B=0X91;
+OPCODE LOCALVAR3B=0X92;
+OPCODE NUMSLOT1B=0X93;
+OPCODE NUMSLOT2B=0X94;
+OPCODE NUMSLOT3B=0X95;
+OPCODE NUMSLOT=0XEF;
+OPCODE STRSLOT1B=0X96;
+OPCODE STRSLOT2B=0X97;
+OPCODE STRSLOT3B=0X98;
+OPCODE CALL1B=0X99;
+OPCODE CALL2B=0X9A;
+OPCODE CALL3B=0X9B;
+OPCODE FUNCSLOT1B=0X9C;
+OPCODE FUNCSLOT2B=0X9D;
+OPCODE FUNCSLOT3B=0X9E;
+OPCODE FUNCSLOT=0X9F;
+OPCODE CONSTRUCT1B=0X82;
+OPCODE CONSTRUCT2B=0X83;
+OPCODE CONSTRUCT3B=0X84;
+OPCODE AND1B=0X85;
+OPCODE AND2B=0X86;
+OPCODE AND3B=0X87;
+OPCODE OR1B=0X88;
+OPCODE OR2B=0X89;
+OPCODE OR3B=0X8A;
 OPCODE LOADNUM=0XA0;
 OPCODE LOADSTR=0XA1;
 OPCODE LOADVAR=0XA2;
@@ -105,7 +130,7 @@ OPCODE LOADNULL=0XA9;
 OPCODE LOADUNDEFINED=0XAA;
 OPCODE LOADOBJ=0XAB;
 OPCODE LOADLONGNUM=0XAC;
-OPCODE LOADCONSTANT=0XAD;
+OPCODE STRSLOT=0XAD;
 OPCODE ASSIGNLOCAL=0XC0;
 OPCODE ASSIGN=0XC1;
 OPCODE OR=0XC2;
@@ -436,12 +461,29 @@ token readtok(char type){
 	if(curtok>toks.size()||toks[curtok].type!=type)fatal("expected token %s at line %d, column %d",tokenname[(uint)type],toks[curtok].line,toks[curtok].column);
 	return toks[curtok++];
 }
-vector<string> constant_pool;
-umap<string,int> string_cid;
-int used_cid;
-inline int get_string_cid(const string&s){
-	if(string_cid.find(s)==string_cid.end())constant_pool.push_back(s),string_cid[s]=used_cid++;
-	return string_cid[s];
+vector<string> str_pool;
+umap<string,uint> strcid;
+int used_spid;
+inline uint str_slot(const string&s){
+	if(strcid.find(s)==strcid.end())str_pool.push_back(s),strcid[s]=used_spid++;
+	return strcid[s];
+}
+vector<double> num_pool;
+umap<double,uint> numcid;
+int used_dpid;
+inline int num_slot(const double&s){
+	if(numcid.find(s)==numcid.end())num_pool.push_back(s),numcid[s]=used_dpid++;
+	return numcid[s];
+}
+struct funcslot{
+	vector<int>pid;
+	codeset instr;
+	vector<int>upvs;
+};
+vector<funcslot> func_pool;
+inline uint func_slot(const vector<int>&pid,const codeset&instr,const vector<int>&upvs){
+	func_pool.push_back((funcslot){pid,instr,upvs});
+	return func_pool.size()-1;
 }
 umap<uint,string,hasher>names;
 vector<umap<string,uint>> scopes;
@@ -531,20 +573,32 @@ bool check_smlint(double x,codeset&s){
 	}
 	return 0;
 }
+codeset simple(const vector<uchar>&chosing,int id){
+	codeset r,s,g=loadint(id);
+	if(id==0)s.push_back(0);
+	else{
+		uint i=0;
+		for(i=0;i<4;i++)if(g[i])break;
+		for(i;i<4;i++)s.push_back(g[i]);
+	}
+	r.push_back(chosing[s.size()-1]),concat(r,s);
+	return r;
+}
+inline codeset compile_localvar(int id){return simple({LOCALVAR1B,LOCALVAR2B,LOCALVAR3B,LOADVARLOCAL},id);}
+inline codeset compile_var(int id){return simple({LOCALVAR1B,LOCALVAR2B,LOCALVAR3B,LOADVARLOCAL},id);}
+inline codeset compile_call(int id){return simple({CALL1B,CALL2B,CALL3B,CALL},id);}
+inline codeset compile_jump(int id){codeset r;r.push_back(JUMP),concat(r,loadint(id));return r;}
+inline codeset compile_loop(int id){codeset r;r.push_back(LOOP),concat(r,loadint(id));return r;}
+inline codeset compile_jif(int id){codeset r;r.push_back(JUMP_IF_FALSE),concat(r,loadint(id));return r;;}
+inline codeset compile_and(int id){return simple({AND1B,AND2B,AND3B,AND},id);}
+inline codeset compile_or(int id){return simple({OR1B,OR2B,OR3B,OR},id);}
+inline codeset compile_constant(int id){return simple({STRSLOT1B,STRSLOT2B,STRSLOT3B,STRSLOT},id);}
+inline codeset compile_loadfunc(int id){return simple({FUNCSLOT1B,FUNCSLOT2B,FUNCSLOT3B,FUNCSLOT},id);}
+inline codeset compile_loadnum(int id){return simple({NUMSLOT1B,NUMSLOT2B,NUMSLOT3B,NUMSLOT},id);}
 codeset compile_num(double x){
 	codeset s;
 	if(check_smlint(x,s))return s;
-	if(force_short_double){
-		bpser8.x=x;
-		s.push_back(LOADNUM);
-		for(int i=0;i<8;i++)s.push_back(bpser8.bits[i]);
-	}
-	else{
-		bpser.x=x;
-		s.push_back(LOADLONGNUM);
-		for(int i=0;i<16;i++)s.push_back(bpser.bits[i]);
-	}
-	return s;
+	return compile_loadnum(num_slot(x));
 }
 long long hex2dec(const string&s);
 string encd(ull v){
@@ -557,47 +611,7 @@ string encd(ull v){
 	else fatal("invalid codepoint %lld",v);
 	return s;
 }
-codeset compile_str(const string&x){
-	codeset s,b;
-	if(!disable_constant_pool){
-		s.push_back(LOADCONSTANT),concat(s,loadint(get_string_cid(x.substr(1,x.size()-2))));
-		return s;
-	}
-	uint len=x.size()-1,c=0;
-	s.push_back(LOADSTR);
-	concat(s,loadint(0));
-	#define gen(x) s.push_back(x/0xfu);s.push_back(x%0xfu);
-	for(uint i=1;i<len;i++)if(x[i]=='\\'){
-		if(i+1<len){
-			switch(x[i+1]){
-				case 'a':gen('\a');break;
-				case 'n':gen('\n');break;
-				case 't':gen('\t');break;
-				case 'r':gen('\r');break;
-				case 'b':gen('\b');break;
-				case '\\':gen('\\');break;
-				case '\'':gen('\'');break;
-				case '\"':gen('\"');break;
-				case '0':gen('\0');break;
-				case 'u':{
-					i+=2;
-					if(i+3>=len)fatal("uncompleted unicode escape sequence in string '%s'",x.c_str());
-					string e=encd(hex2dec((string)"0x"+x[i]+x[i+1]+x[i+2]+x[i+3]));
-					for(auto v:e){gen(v);}
-					i+=2,c+=e.size()-1; 
-					break;
-				}
-				default:fatal("unknown escaped char '\\%c' in string '%s'",x[i+1],x.c_str());
-			}
-			i++,c++;
-		}
-	}else {
-		gen(x[i]);c++;
-	}
-	b=loadint(c);
-	s[1]=b[0],s[2]=b[1],s[3]=b[2],s[4]=b[3];
-	return s;
-}
+inline codeset compile_str(const string&x){return compile_constant(str_slot(x.substr(1,x.size()-2)));}
 inline codeset checktype(int num,const string&type){
 	codeset s;
 	if(type!="any")s=compile_str(type),s.push_back(CHECKTYPE),concat(s,loadshort(num));
@@ -609,7 +623,8 @@ codeset compile_block(bool a=1);
 codeset compile_upvalue(string);
 codeset compile_lambda();
 codeset parse_args(char,uint&);
-codeset parse_params(uint&,codeset&,char ender=TOK_RPR);
+vector<int> get_used_upvalue();
+vector<int> parse_params(uint&,codeset&,char ender=TOK_RPR);
 codeset parse_decl();
 codeset parse_obj();
 int anfunc=0;
@@ -666,7 +681,7 @@ codeset parse_expr(int precd){
 		}
 		case TOK_ID:{
 			if(liter)concat(s,compile_str('"'+tok.val+'"')),readtok(TOK_ID),s.push_back(GETADDR);
-			else s.push_back(LOADVAR),concat(s,loadint(getid(tok.val))),readtok(TOK_ID);
+			else concat(s,compile_var(getid(tok.val))),readtok(TOK_ID);
 			break;
 		}
 		case TOK_TYPEOF:{
@@ -689,17 +704,18 @@ codeset parse_expr(int precd){
 		case TOK_FUNC:{
 			if(liter)concat(s,compile_str("function")),readtok(TOK_FUNC),s.push_back(GETADDR);
 			else{
-				string f=anonyfunc();
-				readtok(TOK_FUNC);s.push_back(LOADFUNC);
+				readtok(TOK_FUNC);
 				new_scope();
-				readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
-				concat(s,loadint(tmp));
+				readtok(TOK_LPR);vector<int> b1=parse_params(tmp,pc);readtok(TOK_RPR);
 				readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 				b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
-				concat(s,loadint(b2.size()));
-				concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
-				concat(s,b1),concat(s,compile_upvalue(f)),concat(s,b2);
+				// b2 -> instr
+				// used_upvalues[used_upvalues.size()-1] -> upvs
+				// b1 -> pid
+				uint slot_id=func_slot(b1,b2,get_used_upvalue());
 				del_scope();
+				concat(s,compile_loadfunc(slot_id));
+				s.push_back(ASSIGN);
 			}
 			break;
 		}
@@ -731,27 +747,23 @@ codeset parse_expr(int precd){
 				b1=parse_expr(prior(TOK_QUEZ));
 				readtok(TOK_COL);
 				b2=parse_expr(prior(TOK_QUEZ));
-				s.push_back(JUMP_IF_FALSE);
-				concat(s,loadint(b1.size()+5));
+				concat(s,compile_jif(b1.size()+5));
 				concat(s,b1);
-				s.push_back(JUMP);
-				concat(s,loadint(b2.size()));
+				concat(s,compile_jump(b2.size()));
 				concat(s,b2);
 				break;
 			}
 			case TOK_OR:{
 				v=tok.val,pr=prior(tok.type);curtok++;
 				b1=parse_expr(pr); 
-				s.push_back(OR);
-				concat(s,loadint(b1.size()));
+				concat(s,compile_or(b1.size()));
 				concat(s,b1);
 				break;
 			}
 			case TOK_AND:{
 				v=tok.val,pr=prior(tok.type);curtok++;
 				b1=parse_expr(pr); 
-				s.push_back(AND);
-				concat(s,loadint(b1.size()));
+				concat(s,compile_and(b1.size()));
 				concat(s,b1);
 				break;
 			}
@@ -783,7 +795,7 @@ codeset parse_expr(int precd){
 			case TOK_LPR:{
 				uint argcnt;
 				readtok(TOK_LPR);concat(s,parse_args(TOK_RPR,argcnt));readtok(TOK_RPR);
-				s.push_back(CALL);concat(s,loadint(argcnt));
+				concat(s,compile_call(argcnt));
 				break;
 			}
 			case TOK_RPR:case TOK_RBK:return s;
@@ -801,11 +813,11 @@ codeset parse_args(char end,uint &c){
 	}
 	return s; 
 }
-codeset parse_params(uint &c,codeset&arg,char ender){
-	codeset s;c=0;
+vector<int> parse_params(uint &c,codeset&arg,char ender){
+	vector<int> s;c=0;
 	while(tok.type!=ender){
 		if(tok.type==TOK_AND)readtok(TOK_AND);
-		concat(s,loadint(getid(readtok(TOK_ID).val,1)));
+		s.push_back(getid(readtok(TOK_ID).val,1));
 		if(tok.type==TOK_COL){
 			nexttok();string t=tok.val;nexttok();
 			if(!isalpha(t[0]))fatal("expected a type name after ':', not %s",tokenname[(uint)tok.type]);
@@ -823,8 +835,7 @@ codeset parse_decl(){
 		if(tok.type==TOK_ASS)readtok(TOK_ASS),concat(T,parse_expr(20));
 		else T.push_back(LOADNULL);
 		T.push_back(ASSIGNLOCAL);
-		s.push_back(LOADVARLOCAL);
-		concat(s,loadint(getid(t.val,1)));
+		concat(s,compile_localvar(getid(t.val,1)));
 		concat(s,T);
 		if(tok.type!=TOK_COM)break;
 		else readtok(TOK_COM);
@@ -923,10 +934,8 @@ codeset compile_if(){
 	codeset b1=compile();
 	codeset b2=codeset();
 	if(tok.type==TOK_ELSE)readtok(TOK_ELSE),b2=compile();
-	b1.push_back(JUMP);
-	concat(b1,loadint(b2.size()));// IMPORTNAT
-	s.push_back(JUMP_IF_FALSE);
-	concat(s,loadint(b1.size()));
+	concat(b1,compile_jump(b2.size()));// IMPORTNAT
+	concat(s,compile_jif(b1.size()));
 	concat(s,b1);
 	concat(s,b2);
 	return s;
@@ -934,10 +943,8 @@ codeset compile_if(){
 codeset compile_while(){
 	codeset s=parse_expr(0);
 	codeset b=compile();
-	s.push_back(JUMP_IF_FALSE);
-	b.push_back(LOOP);
-	concat(b,loadint(b.size()+s.size()+4));//IMPORTANT
-	concat(s,loadint(b.size()));
+	concat(b,compile_loop(b.size()+s.size()+6));//IMPORTANT
+	concat(s,compile_jif(b.size()));
 	concat(s,b);
 	fillholder(s,b.size(),0);
 	return s;
@@ -956,12 +963,10 @@ codeset compile_for(){
 	concat(s,expr);
 	uint stepsize=step.size();
 	uint bsize=b.size();
-	s.push_back(JUMP_IF_FALSE);
 	concat(b,step);
-	b.push_back(LOOP);
-	concat(b,loadint(b.size()+expr.size()+5));//IMPORTANT
+	concat(b,compile_loop(b.size()+expr.size()+6));//IMPORTANT
 	fillholder(b,bsize,stepsize);
-	concat(s,loadint(b.size()));
+	concat(s,compile_jif(b.size()));
 	concat(s,b); 
 	del_scope();
 	return s;
@@ -977,45 +982,45 @@ codeset compile_forall(){
 	
 	// I=0 V=arr K=keys(V) L=len(K) 
 	codeset step1;
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(I)));
+	concat(step1,compile_var((getid(I))));
 	concat(step1,compile_num(0));
 	step1.push_back(ASSIGN);
 	step1.push_back(POP);
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(V)));
+	concat(step1,compile_var((getid(V))));
 	concat(step1,arr);
 	step1.push_back(ASSIGN);
 	step1.push_back(POP);
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(K)));
-	step1.push_back(LOADVAR),concat(step1,loadint(getid("keys")));
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(V)));
-	step1.push_back(CALL),concat(step1,loadint(1));
+	concat(step1,compile_var(getid(K)));
+	concat(step1,compile_var(getid("keys")));
+	concat(step1,compile_var(getid(V)));
+	concat(step1,compile_call(1));
 	step1.push_back(ASSIGN);
 	step1.push_back(POP);
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(L)));
-	step1.push_back(LOADVAR),concat(step1,loadint(getid("len")));
-	step1.push_back(LOADVAR),concat(step1,loadint(getid(K)));
-	step1.push_back(CALL),concat(step1,loadint(1));
+	concat(step1,compile_var(getid(L)));
+	concat(step1,compile_var(getid("len")));
+	concat(step1,compile_var(getid(K)));
+	concat(step1,compile_call(1));
 	step1.push_back(ASSIGN);
 	step1.push_back(POP);
 	
 	// I<L
 	codeset step2;
-	step2.push_back(LOADVAR),concat(step2,loadint(getid(I)));
-	step2.push_back(LOADVAR),concat(step2,loadint(getid(L)));
+	concat(step2,compile_var(getid(I)));
+	concat(step2,compile_var(getid(L)));
 	step2.push_back(SML);
 	
 	// I+=1
 	codeset step3;
-	step3.push_back(LOADVAR),concat(step3,loadint(getid(I)));
+	concat(step3,compile_var(getid(I)));
 	concat(step3,compile_num(1));
 	step3.push_back(ADDE);
 	step3.push_back(POP);
 	
 	// iter=K[I]
 	codeset pre;
-	pre.push_back(LOADVAR),concat(pre,loadint(getid(iter)));
-	pre.push_back(LOADVAR),concat(pre,loadint(getid(K)));
-	pre.push_back(LOADVAR),concat(pre,loadint(getid(I)));
+	concat(pre,compile_var(getid(iter)));
+	concat(pre,compile_var(getid(K)));
+	concat(pre,compile_var(getid(I)));
 	pre.push_back(GETADDR);
 	pre.push_back(ASSIGN);
 	pre.push_back(POP);
@@ -1028,14 +1033,17 @@ codeset compile_forall(){
 	concat(s,expr);
 	uint stepsize=step.size();
 	uint bsize=b.size();
-	s.push_back(JUMP_IF_FALSE);
 	concat(b,step);
-	b.push_back(LOOP);
-	concat(b,loadint(b.size()+expr.size()+5));//IMPORTANT
+	concat(b,compile_loop(b.size()+expr.size()+5));//IMPORTANT
 	fillholder(b,bsize,stepsize);
-	concat(s,loadint(b.size()));
+	concat(s,compile_jif(b.size()));
 	concat(s,b); 
 	del_scope();
+	return s;
+}
+vector<int> get_used_upvalue(){
+	vector<int> s;
+	for(auto a:used_upvalues[used_upvalues.size()-1])s.push_back(a);
 	return s;
 }
 codeset compile_upvalue(string fid){
@@ -1044,40 +1052,36 @@ codeset compile_upvalue(string fid){
 	return s;
 }
 codeset compile_func(){
-	codeset s,b1,b2,pc;
+	codeset s,b2,pc;
+	
 	string name=readtok(TOK_ID).val;
 	uint tmp;
-	s.push_back(LOADVAR);
-	concat(s,loadint(getid(name)));
+	concat(s,compile_var(getid(name)));
 	new_scope();
-	s.push_back(LOADFUNC);
-	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
-	concat(s,loadint(tmp));
+	readtok(TOK_LPR);vector<int> b1=parse_params(tmp,pc);readtok(TOK_RPR);
 	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
-	concat(s,loadint(b2.size()));
-	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
-	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
+	// b2 -> instr
+	// used_upvalues[used_upvalues.size()-1] -> upvs
+	// b1 -> pid
+	uint slot_id=func_slot(b1,b2,get_used_upvalue());
 	del_scope();
+	concat(s,compile_loadfunc(slot_id));
 	s.push_back(ASSIGN);
 	return s;
 }
 uint used_lambdas;
 codeset compile_lambda(){
-	codeset s,b1,b2,pc;
+	codeset s,b2,pc;
 	string name="$LAMBDA_"+num2str(++used_lambdas);
 	uint tmp;
-	s.push_back(LOADVAR);
-	concat(s,loadint(getid(name)));
+	concat(s,compile_var(getid(name)));
 	new_scope();
-	s.push_back(LOADFUNC);
-	readtok(TOK_SML);b1=parse_params(tmp,pc,TOK_BIG),readtok(TOK_BIG);
-	concat(s,loadint(tmp));
+	readtok(TOK_SML);vector<int> b1=parse_params(tmp,pc,TOK_BIG);readtok(TOK_BIG);
 	readtok(TOK_ARW);concat(b2,pc),concat(b2,parse_expr(0)),b2.push_back(RETURN);
-	concat(s,loadint(b2.size()));
-	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
-	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
+	uint slot_id=func_slot(b1,b2,get_used_upvalue());
 	del_scope();
+	concat(s,compile_loadfunc(slot_id));
 	s.push_back(ASSIGN);
 	return s;
 }
@@ -1110,25 +1114,22 @@ string getoperator(){
 	return "";
 }
 codeset compile_method(string&name){
-	codeset s,b1,b2,pc;int cop=0;
+	codeset s,b2,pc;int cop=0;
 	if(name=="")name=readtok(TOK_ID).val;
 	else if(name=="operator")name=getoperator(),cop=1;
 	else cop=2;
 	uint tmp;
 	new_scope();
-	s.push_back(LOADFUNC);
-	readtok(TOK_LPR);b1=parse_params(tmp,pc),readtok(TOK_RPR);
+	readtok(TOK_LPR);vector<int> b1=parse_params(tmp,pc);readtok(TOK_RPR);
 	if(cop==1&&tmp==0){
 		if(name=="__ADD__")name="__PST__";
 		if(name=="__SUB__")name="__NGT__";
 	}
 	if(cop==2)name="__constructor_"+num2str(tmp)+"__";
-	concat(s,loadint(tmp));
 	readtok(TOK_LBR);concat(b2,pc),concat(b2,compile_block(0));readtok(TOK_RBR);
 	b2.push_back(LOADUNDEFINED),b2.push_back(RETURN);
-	concat(s,loadint(b2.size()));
-	concat(s,loadint(used_upvalues[used_upvalues.size()-1].size()));
-	concat(s,b1),concat(s,compile_upvalue(name)),concat(s,b2);
+	uint slot_id=func_slot(b1,b2,get_used_upvalue());
+	concat(s,compile_loadfunc(slot_id));
 	del_scope();
 	return s;
 }
@@ -1220,7 +1221,7 @@ const uint MAX_FILE_CNT=1024*4;
 const uint RUNSTACK_SIZE=1024*1024;
 typedef enum {TNUM,TSTR,TNULL,TFUNC,TREF,TTRUE,TFALSE,TUNDEF} valtype;
 const char* valtypename[]={"number","string","null","function","reference","true","false","undefined"};
-inline string ref2string(ull);
+inline string ref2string(ull,int a=0);
 inline string reftype(ull);
 inline int hasfield(const ull&,const string&);
 inline string strictstr(const string&);
@@ -1239,12 +1240,12 @@ struct val{
 	val(valtype t){type=t,permission=1,class_type=0;}
 	val(int64_t ref,valtype t){type=t,num=ref,permission=1,class_type=0;}
 	bool is_true()const{return !(type==TFALSE||type==TNULL||(type==TNUM&&num==0));}
-	string tostr(int strict=0)const{
+	string tostr(int strict=0,int call=1)const{
 		switch(type){
 			case TNUM:return num2str(num);
 			case TSTR:return strict?strictstr(str):str;
 			case TTRUE:case TFALSE:return type==TTRUE?"true":"false";
-			case TREF:return ref2string((ull)num);
+			case TREF:return ref2string((ull)num,call);
 			case TFUNC:return "<function "+num2str(num)+">";
 			case TNULL:return "null";
 			case TUNDEF:return "undefined";
@@ -1612,7 +1613,7 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 		DECODE:
 		if(ip>=len)break;
 //		printf("ip=%d, code=%X\n",ip,s[ip]);
-//		for(runstack i=stk_start;i<curstk;i++)cout<<"\t"<<generef(*i).tostr()<<" ["<<permission_name[generef(*i).permission]<<"]"<<" <class "<<object_manager::used_cls[generef(*i).class_type]<<">"<<endl;
+//		for(runstack i=stk_start;i<curstk;i++)cout<<"\t"<<generef(*i).tostr(0,0)<<" ["<<permission_name[generef(*i).permission]<<"]"<<" <class "<<object_manager::used_cls[generef(*i).class_type]<<">"<<endl;
 //		cout<<endl;
 		switch(s[ip]){
 			default:{
@@ -1646,12 +1647,30 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				generef(*curstk)=val(str),curstk++;
 				BACK;
 			}
-			case LOADCONSTANT:{
-				ip++;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
+			case STRSLOT:case STRSLOT1B:case STRSLOT2B:case STRSLOT3B:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case STRSLOT1B:id=s[ip];break;
+					case STRSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case STRSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case STRSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
 				*curstk=newreg();
-				generef(*curstk)=val(constant_pool[id]),curstk++;
+				generef(*curstk)=val(str_pool[id]),curstk++;
+				break;
+			}
+			case NUMSLOT:case NUMSLOT1B:case NUMSLOT2B:case NUMSLOT3B:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case NUMSLOT1B:id=s[ip];break;
+					case NUMSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case NUMSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case NUMSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
+				*curstk=newreg();
+				generef(*curstk)=val(num_pool[id]),curstk++;
 				break;
 			}
 			case LOADTRUE:{
@@ -1670,10 +1689,15 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				ull nr=newreg();generef(nr)=val(0,TUNDEF),*curstk=nr,curstk++;
 				BACK;
 			}
-			case LOADVAR:case LOADVARLOCAL:{
-				ip++;
-				uint id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
+			case LOADVAR:case LOADVARLOCAL:case LOCALVAR1B:case LOCALVAR2B:case LOCALVAR3B:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case LOCALVAR1B:id=s[ip];break;
+					case LOCALVAR2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case LOCALVAR3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case LOADVAR:case LOADVARLOCAL:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
 				*curstk=id,curstk++;
 				generef(id).permission=GUEST_PERMISSION;
 				BACK;
@@ -1788,24 +1812,34 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 			MATH(LSHF,<<);
 			MATH(RSHF,>>);
 			MATH(XOR,^);
-			case AND:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
+			case AND:case AND1B:case AND2B:case AND3B:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case AND1B:id=s[ip];break;
+					case AND2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case AND3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case AND:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
 				bool cond=generef(*(curstk-1)).is_true();
-				if(!cond)ip+=offset;
+				if(!cond)ip+=id;
 				else{
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
 				}
 				BACK;
 			}
-			case OR:{
-				ip++;
-				uint offset=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
-				ip+=3;
+			case OR:case OR1B:case OR2B:case OR3B:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case OR1B:id=s[ip];break;
+					case OR2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case OR3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case OR:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
 				bool cond=generef(*(curstk-1)).is_true();
-				if(cond)ip+=offset;
+				if(cond)ip+=id;
 				else{
 					if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freereg(*(curstk-1));
 					curstk--;
@@ -1871,6 +1905,21 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				curstk--,*(curstk-1)=nr;
 				BACK;
 			}
+			case FUNCSLOT1B:case FUNCSLOT2B:case FUNCSLOT3B:case FUNCSLOT:{
+				uchar a=s[ip++];
+				uint id;
+				switch(a){
+					case FUNCSLOT1B:id=s[ip];break;
+					case FUNCSLOT2B:id=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case FUNCSLOT3B:id=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case FUNCSLOT:id=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
+				ull nr=newreg();
+				ull fid=newfunc(func_pool[id].pid,func_pool[id].instr,func_pool[id].upvs);
+				generef(nr)=val(fid,TFUNC);
+				*curstk=nr,curstk++;
+				BACK;
+			}
 			case LOADFUNC:{
 				ip++;
 				uint pcnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
@@ -1890,10 +1939,16 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				*curstk=nr,curstk++;
 				BACK;
 			}
-			case CALL:{
-				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],argscnt_=argscnt;
-				ip+=3;
+			case CALL:case CALL1B:case CALL2B:case CALL3B:{
+				uchar a=s[ip++];
+				uint argscnt;
+				switch(a){
+					case CALL1B:argscnt=s[ip];break;
+					case CALL2B:argscnt=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case CALL3B:argscnt=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case CALL:argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
+				uint argscnt_=argscnt;
 				vector<ull> args,freelist;
 				while(argscnt--){
 					args.push_back(*(curstk-1));
@@ -1991,11 +2046,16 @@ int runbytes(const codeset&s,const vector<val>&args,const int &fid,runstack stk_
 				object_manager::make_class(clsname,supname,raw,access);
 				break;
 			}
-			case CONSTRUCT:{
-				ip++;
-				uint argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
+			case CONSTRUCT:case CONSTRUCT1B:case CONSTRUCT2B:case CONSTRUCT3B:{
+				uchar a=s[ip++];
+				uint argscnt;
+				switch(a){
+					case CONSTRUCT1B:argscnt=s[ip];break;
+					case CONSTRUCT2B:argscnt=s[ip]*0xff+s[ip+1],ip+=1;break;
+					case CONSTRUCT3B:argscnt=s[ip]*0xffff+s[ip+1]*0xff+s[ip+2],ip+=2;break;
+					case CONSTRUCT:argscnt=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3],ip+=3;break;
+				}
 				uint argscnt_=argscnt;
-				ip+=3;
 				vector<ull> args,freelist;
 				string clsname=generef(*(curstk-1)).str;
 				if((unsigned int64_t)*(curstk-1)>regoffset*regs.size())freelist.push_back(*(curstk-1));
@@ -2289,11 +2349,11 @@ inline val allvalues(ull ref){
 	for(uint i=0;i<ret.size();i++)generef(-(loc+i))=val(ret[i]),mdfaddr(-(loc+i));
 	return val(loc,TREF);
 }
-inline string ref2string(ull ref){
+inline string ref2string(ull ref,int a){
 	ull id=getarrid(ref);
 	stringstream ret("");
 	if(is_obj[id]){
-		if(hasfield(val(ref,TREF),val("to_str")).is_true()){
+		if(a&&hasfield(val(ref,TREF),val("to_str")).is_true()){
 			ull nr=newreg();generef(nr)=val(ref,TREF);
 			return generef(call_func(generef(getaddr(val(ref,TREF),val("to_str"))).num,vector<ull>(),inner_stack,nr)).tostr();
 		}
@@ -2539,20 +2599,32 @@ namespace launcher{
 		for(int i=file.size()-1;~i;i--)if(file[i]=='.')return file.substr(0,i)+".rbq6";
 		return file+".rbq6";
 	}
+	inline void write2b(ofstream&fcout,int v){codeset g=loadshort(v);for(auto a:g)fcout<<a;}
+	inline void write4b(ofstream&fcout,int v){codeset g=loadint(v);for(auto a:g)fcout<<a;}
 	void savecode(const string&file,const codeset&s){
 		ofstream fcout(file.c_str(),ios::binary);
 		fcout.put(char(0x0f));
 		fcout.put(char(0xf0));
 		fcout.put(char(0x26));
 		fcout.put(char(0x56));
-		codeset g=loadint(CURRENT_VERSION);
-		for(auto a:g)fcout.put((char)a);
-		g=loadint(constant_pool.size());
-		for(auto a:g)fcout.put((char)a);
-		for(auto a:constant_pool){
-			g=loadint(a.size());
-			for(auto v:g)fcout.put(char(v));
+		write4b(fcout,CURRENT_VERSION);
+		fcout.put(char(force_short_double));
+		write4b(fcout,num_pool.size());
+		if(force_short_double)for(auto&n:num_pool){bpser8.x=n;for(int i=0;i<8;i++)fcout.put(char(bpser8.bits[i]));}
+		else for(auto&n:num_pool){bpser.x=n;for(int i=0;i<16;i++)fcout.put(char(bpser.bits[i]));}
+		write4b(fcout,str_pool.size());
+		for(auto&a:str_pool){
+			write4b(fcout,a.size());
 			for(auto v:a)fcout.put(char(v));
+		}
+		write4b(fcout,func_pool.size());
+		for(auto&f:func_pool){
+			write2b(fcout,f.pid.size());
+			write4b(fcout,f.instr.size());
+			write2b(fcout,f.upvs.size());
+			for(auto&p:f.pid)write2b(fcout,p);
+			for(auto a:f.instr)fcout.put((char)a);
+			for(auto&u:f.upvs)write2b(fcout,u);
 		}
 		for(auto a:s)fcout.put((char)a);
 		fcout.close(); 
@@ -2632,6 +2704,8 @@ namespace launcher{
 		start_compile2();
 		return files[0];
 	}
+	inline int read2b(ifstream&fcin){int g=fcin.get()*0xff;g+=fcin.get();return g;}
+	inline int read4b(ifstream&fcin){int g=fcin.get()*0xffffff;g+=fcin.get()*0xffff;g+=fcin.get()*0xff;g+=fcin.get();return g;}
 	void run_rbq(string arg){
 		if(!arg.size())fatal("need a bytecode file to run%c",' ');
 		new_scope(),vm::initvm();codeset s;
@@ -2642,23 +2716,24 @@ namespace launcher{
 			if(!(fcin.get(c)&&(unsigned char)c==0xf0))fatal("uncompatible bytecode file '%s'",arg.c_str());
 			if(!(fcin.get(c)&&c==0x26))fatal("uncompatible bytecode file '%s'",arg.c_str());
 			if(!(fcin.get(c)&&c==0x56))fatal("uncompatible bytecode file '%s'",arg.c_str());
-			int g=fcin.get()*0xffffff;
-			g+=fcin.get()*0xffff;
-			g+=fcin.get()*0xff;
-			g+=fcin.get();
-			version_number=g;
-			g=fcin.get()*0xffffff;
-			g+=fcin.get()*0xffff;
-			g+=fcin.get()*0xff;
-			g+=fcin.get();
+			version_number=read4b(fcin),force_short_double=fcin.get(); 
+			int g;
+			g=read4b(fcin);
+			if(force_short_double)while(g--){for(int i=0;i<8;i++)bpser8.bits[i]=fcin.get();num_pool.push_back(bpser8.x);}
+			else while(g--){for(int i=0;i<16;i++)bpser.bits[i]=fcin.get();num_pool.push_back(bpser.x);}
+			g=read4b(fcin);
 			while(g--){
-				int r=fcin.get()*0xffffff;
-				r+=fcin.get()*0xffff;
-				r+=fcin.get()*0xff;
-				r+=fcin.get();
-				string v="";
-				while(r--)v+=fcin.get();
-				constant_pool.push_back(v);
+				int r=read4b(fcin);string v="";
+				while(r--)v+=fcin.get();str_pool.push_back(v);
+			}
+			g=read4b(fcin);
+			while(g--){
+				int pidlen=read2b(fcin),instrlen=read4b(fcin),upvslen=read2b(fcin);
+				vector<int>pid,upvs;codeset instr;
+				while(pidlen--)pid.push_back(read2b(fcin));
+				while(instrlen--)instr.push_back(fcin.get());
+				while(upvslen--)upvs.push_back(read2b(fcin));
+				func_slot(pid,instr,upvs);
 			}
 		}
 		else s.push_back(uchar(c));
