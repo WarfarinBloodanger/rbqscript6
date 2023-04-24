@@ -1,0 +1,52 @@
+class HyperInt{
+	public var digit
+	constructor(s){
+		this.digit=[]
+		if(s is string){
+			for(i=0;i<len(s);i+=1)this.digit[i]=ascii(s[i])-ascii('0')
+			this.digit=this.digit.reverse()
+		}
+		else this(""+s)
+	}
+	public function to_str(){
+		var str=""
+		for(i=this.digit.length()-1;i>=0;i-=1)str+=this.digit[i]
+		return str
+	}
+	public function fix(){
+		while(this.digit.back()==0)this.digit.pop()
+	}
+	operator+(c:HyperInt){
+		var r=new HyperInt(0)
+		this.fix() c.fix()
+		var L=max(this.digit.length(),c.digit.length())+2
+		for(i=0;i<L;i+=1){
+			var x=this.digit[i];
+			var y=c.digit[i];
+			if(!(x is number))x=0
+			if(!(y is number))y=0
+			r.digit[i]+=x+y;
+			r.digit[i+1]=Math.floor(r.digit[i]/10);
+			r.digit[i]%=10;
+		}
+		r.fix()
+		return r
+	}
+	operator*(c:HyperInt){
+		var r=new HyperInt(0)
+		this.fix() c.fix()
+		var I=this.digit.length()
+		var J=c.digit.length()
+		for(i=0;i<I+J+2;i+=1)r.digit[i]=0
+		for(i=0;i<I;i+=1){
+			for(j=0;j<J;j+=1){
+				r.digit[i+j]+=this.digit[i]*c.digit[j]
+				r.digit[i+j+1]+=Math.floor(r.digit[i+j]/10);
+				r.digit[i+j]%=10;
+			}
+		}
+		r.fix()
+		return r
+	}
+}
+Console.print(new HyperInt(Console.read_line())*new HyperInt(Console.read_line()))
