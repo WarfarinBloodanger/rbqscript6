@@ -358,6 +358,7 @@ void tokenize(char *src,int strict=1){
 			case('-'):{
 				cur.val.push_back(src[loc]),(chkln,loc++,loc-1);
 				if(loc<len&&src[loc]=='>')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_ARW;
+				else if(loc<len&&src[loc]=='=')cur.val.push_back(src[loc]),(chkln,loc++,loc-1),cur.type=TOK_SUBE;
 				else cur.type=TOK_SUB;
 				toks.push_back(cur);
 				break;
@@ -611,7 +612,37 @@ string encd(ull v){
 	else fatal("invalid codepoint %lld",v);
 	return s;
 }
-inline codeset compile_str(const string&x){return compile_constant(str_slot(x.substr(1,x.size()-2)));}
+inline string strexpr(const string&x){
+	uint len=x.size();string r="";
+	#define gen(v) r+=(v)
+	for(uint i=0;i<len;i++)if(x[i]=='\\'){
+		if(i+1<len){
+			switch(x[i+1]){
+				case 'a':gen('\a');break;
+				case 'n':gen('\n');break;
+				case 't':gen('\t');break;
+				case 'r':gen('\r');break;
+				case 'b':gen('\b');break;
+				case '\\':gen('\\');break;
+				case '\'':gen('\'');break;
+				case '\"':gen('\"');break;
+				case '0':gen('\0');break;
+				case 'u':{
+					i+=2;
+					if(i+3>=len)fatal("uncompleted unicode escape sequence in string '%s'",x.c_str());
+					string e=encd(hex2dec((string)"0x"+x[i]+x[i+1]+x[i+2]+x[i+3]));
+					r+=e;
+					i+=2;
+					break;
+				}
+				default:fatal("unknown escaped char '\\%c' in string '%s'",x[i+1],x.c_str());
+			}
+			i++;
+		}
+	}else gen(x[i]);
+	return r;
+}
+inline codeset compile_str(const string&x){return compile_constant(str_slot(strexpr(x.substr(1,x.size()-2))));}
 inline codeset checktype(int num,const string&type){
 	codeset s;
 	if(type!="any")s=compile_str(type),s.push_back(CHECKTYPE),concat(s,loadshort(num));
@@ -1034,7 +1065,7 @@ codeset compile_forall(){
 	uint stepsize=step.size();
 	uint bsize=b.size();
 	concat(b,step);
-	concat(b,compile_loop(b.size()+expr.size()+5));//IMPORTANT
+	concat(b,compile_loop(b.size()+expr.size()+6));//IMPORTANT
 	fillholder(b,bsize,stepsize);
 	concat(s,compile_jif(b.size()));
 	concat(s,b); 
@@ -2266,6 +2297,14 @@ namespace utils{
 		mdfaddr(-addr,1);
 		return ret;
 	}
+	inline val arrback(ull ref){
+		ull id=getarrid(ref);
+		if(is_obj[id])fatal("can not get back elements from an object reference%c",' ');
+		if(!indices[id].size())return val(0,TUNDEF);
+		ull addr=*indices[id].rbegin();
+		val ret=generef(-addr);
+		return ret;
+	}
 	inline val int2str(ull x,ull base){
 		string r="";int n=0;
 		if(x==0)return (string)"0";
@@ -2488,6 +2527,7 @@ inline int call_builtin(const int&fid,const vector<ull>&args,ull this_obj){
 		case 64:need(1);retv=arg(0);for(uint i=1;i<args.size();i++)retv=retv+arg(i);break;
 		case 65:need(1);chktype(0,TREF);retv=allkeys(arg(0).num);break;
 		case 66:need(1);chktype(0,TREF);retv=allvalues(arg(0).num);break;
+		case 67:retv=utils::arrback(generef(this_obj).num);break;
 		default:fatal("unknown builtin function id %d\n",fid);retv=0;break;
 	}
 	int nr=newreg();generef(nr)=retv;
@@ -2578,6 +2618,7 @@ void initvm(){
 	makeobj("Math");
 	func("max"),func("min"),func("sum");
 	func("keys"),func("values");
+	builtincls(TREF,"back");
 	for(auto a:clsvt)initarr(a.first,clsvt[a.first],clsvr[a.first]);
 	usedfuncs=1024;
 	usedname=1024;
