@@ -70,7 +70,7 @@ const int CURRENT_VERSION=6;
 int force_short_double=0;
 int version_number;
 
-OPCODE NOP=0x88;
+OPCODE NOP=0x0F;
 OPCODE LOAD0=0x10;
 OPCODE LOAD1=0x11;
 OPCODE LOAD2=0x12;
@@ -934,7 +934,8 @@ void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 			s[i+3]==BREAKHOLDER&&s[i+4]==BREAKHOLDER&&s[i+5]==BREAKHOLDER&&
 			s[i+6]==BREAKHOLDER&&s[i+7]==BREAKHOLDER&&s[i+8]==BREAKHOLDER
 		){
-			uint offset=bsize-i+stepsize;
+			uint offset=s.size()-i-4+stepsize;
+			
 			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
 			s[i+5]=NOP,s[i+6]=NOP,s[i+7]=NOP,s[i+8]=NOP;
@@ -944,7 +945,7 @@ void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 			s[i+3]==CTNHOLDER&&s[i+4]==CTNHOLDER&&s[i+5]==CTNHOLDER&&
 			s[i+6]==CTNHOLDER&&s[i+7]==CTNHOLDER&&s[i+8]==CTNHOLDER
 		){
-			uint offset=bsize-i-5;
+			uint offset=bsize-i-5+1;
 			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
 			s[i+5]=NOP,s[i+6]=NOP,s[i+7]=NOP,s[i+8]=NOP;
@@ -972,12 +973,15 @@ codeset compile_if(){
 	return s;
 }
 codeset compile_while(){
-	codeset s=parse_expr(0);
+	codeset s;
+	s.push_back(NEWFRAME);
+	concat(s,parse_expr(0));
 	codeset b=compile();
 	concat(b,compile_loop(b.size()+s.size()+6));//IMPORTANT
 	concat(s,compile_jif(b.size()));
 	concat(s,b);
 	fillholder(s,b.size(),0);
+	s.push_back(DELFRAME);
 	return s;
 }
 codeset compile_for(){
