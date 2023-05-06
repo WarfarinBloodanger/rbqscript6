@@ -1,0 +1,117 @@
+#include "tokens.rin"
+
+function prior(t){
+	if(t=='+'||t=='-')return 50;
+	else if(t=='*'||t=='/'||t=='%')return 60;
+	return 0;
+}
+parse_args=null
+parse_obj=null
+function compile_str(s){
+	Console.printf("LOADSTR '{0}'",s)
+}
+function expression(precd){
+	c=curtok()
+	if(c.type=='('){
+		readtok('(')
+		expression(0)
+		readtok(')')
+	}
+	else if(c.type=='['){
+		readtok('[')
+		t=parse_args(']')
+		readtok(']')
+		Console.printf("LOADARR {0}",t)
+	}
+	else if(c.type=='{'){
+		readtok('{')
+		parse_obj()
+		readtok('}')
+	}
+	else if(c.type=="number"){
+		Console.printf("LOADNUM {0}",c.val)
+		readtok();
+	}
+	else if(c.type=="hex"){
+		Console.printf("LOADNUM {0}",dec(c.val))
+		readtok();
+	}
+	else if(c.type=="string"){
+		Console.printf("LOADSTR {0}",c.val)
+		readtok();
+	}
+	else if(c.type=="name"){
+		Console.printf("LOADVAR {0}",c.val)
+		readtok();
+	}
+	else if(c.val=='+'){
+		readtok();
+		expression(120)
+		Console.print("POSITIVE")
+	}
+	else if(c.val=='-'){
+		readtok();
+		expression(120)
+		Console.print("NEGATIVE")
+	}
+	else System.abort("unexpected {0}".format(c.val))
+	while(remain()&&prior(curtok().val)>precd){
+		c=curtok()
+		if(c.val=='+'){
+			nexttok();
+			expression(50);
+			Console.print("ADD")
+		}
+		else if(c.val=='-'){
+			nexttok();
+			expression(50);
+			Console.print("SUB")
+		}
+		else if(c.val=='*'){
+			nexttok();
+			expression(60);
+			Console.print("MUL")
+		}
+		else if(c.val=='/'){
+			nexttok();
+			expression(60);
+			Console.print("DIV")
+		}
+		else if(c=='%'){
+			nexttok();
+			expression(60);
+			Console.print("MOD")
+		}
+		else return 0;
+	}
+}
+function parse_args(end){
+	var cnt=0
+	while(curtok().type!=']'){
+		expression(20)
+		cnt+=1
+		if(curtok().type==',')readtok(',')
+	}
+	return cnt
+}
+function parse_obj(){
+	var cnt=0
+	while(curtok().type!='}'){
+		if(
+			curtok().type=="name"||curtok().type=="number"||
+			curtok().type=="true"||curtok().type=="false"||
+			curtok().type=="null"||curtok().type=="undefined"
+		) compile_str('"'+curtok().val+'"')
+		else if(curtok().type=="string")compile_str(curtok().val)
+		else System.abort("expected a property name, given {0}".format(curtok().val))
+		nexttok()
+		readtok(':')
+		expression(0)
+		if(curtok().type==',')readtok(',')
+		cnt+=1
+	}
+	Console.printf("LOADOBJ {0}",cnt)
+}
+tokenize(Console.read_line())
+Console.print(tokens)
+expression(0)
