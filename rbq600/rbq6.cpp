@@ -565,7 +565,7 @@ inline codeset loadint(int v){
 bool check_smlint(double x,codeset&s){
 	if(x<0||!isint(x))return 0;
 	x=uint(x);
-	if(x<=16)return s.push_back(LOAD0+x),1;
+	if(x<16)return s.push_back(LOAD0+x),1;
 	if(x<=0xffffffffu){
 		codeset e;
 		while(x)e.push_back(uint(x)%256),x=(uint)x/256;
