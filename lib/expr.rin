@@ -1,14 +1,39 @@
 #include "tokens.rin"
 
 function prior(t){
-	if(t=='+'||t=='-')return 50;
-	else if(t=='*'||t=='/'||t=='%')return 60;
-	return 0;
+	if(t==",")return 10;
+	else if(
+		t=="="||t=="+="||t=="-="||t=="*="||t=="/="||t=="%="||
+		t=="&="||t=="|="||t=="^="||t=="<<="||t==">>="
+	) return 20;
+	else if(t=="or")return 24;
+	else if(t=="?")return 25;
+	else if(t=="||")return 30;
+	else if(t=="&&")return 40;
+	else if(t=="|")return 50;
+	else if(t=="^")return 60;
+	else if(t=="&")return 70;
+	else if(t=="=="||t=="!=")return 80;
+	else if(
+		t=="<"||t==">"||t=="<="||t==">="||
+		t=="has"||t=="typeof"||t=="is"
+	) return 90;
+	else if(t=="<<"||t==">>")return 100;
+	else if(t=="+"||t=="-")return 110;
+	else if(t=="*"||t=="/"||t=="%")return 120;
+	else if(t=="|"||t=="~")return 130;
+	else if(t=="("||t=="["||t=="."||t=="->")return 140;
+	return 1;
 }
 parse_args=null
 parse_obj=null
 function compile_str(s){
 	Console.printf("LOADSTR '{0}'",s)
+}
+used_label=0
+function label(){
+	used_label+=1
+	return "<label {0}>".format(used_label)
 }
 function expression(precd){
 	c=curtok()
@@ -37,7 +62,7 @@ function expression(precd){
 		readtok();
 	}
 	else if(c.type=="string"){
-		Console.printf("LOADSTR {0}",c.val)
+		compile_str(c.val)
 		readtok();
 	}
 	else if(c.type=="name"){
@@ -46,49 +71,70 @@ function expression(precd){
 	}
 	else if(c.val=='+'){
 		readtok();
-		expression(120)
+		expression(130)
 		Console.print("POSITIVE")
 	}
 	else if(c.val=='-'){
 		readtok();
-		expression(120)
+		expression(130)
 		Console.print("NEGATIVE")
+	}
+	else if(c.val=='!'){
+		readtok();
+		expression(120)
+		Console.print("NOT")
+	}
+	else if(c.val=='~'){
+		readtok();
+		expression(120)
+		Console.print("BITNOT")
 	}
 	else System.abort("unexpected {0}".format(c.val))
 	while(remain()&&prior(curtok().val)>precd){
 		c=curtok()
-		if(c.val=='+'){
+		if(c.val=="+"){nexttok();expression(110);Console.print("ADD")}
+		else if(c.val=="-"){nexttok();expression(110);Console.print("SUB")}
+		else if(c.val=="*"){nexttok();expression(120);Console.print("MUL")}
+		else if(c.val=="/"){nexttok();expression(120);Console.print("DIV")}
+		else if(c.val=="%"){nexttok();expression(120);Console.print("MOD")}
+		else if(c.val=="<<"){nexttok();expression(100);Console.print("LSHF")}
+		else if(c.val==">>"){nexttok();expression(100);Console.print("RSHF")}
+		else if(c.val=="|"){nexttok();expression(50);Console.print("BITOR")}
+		else if(c.val=="&"){nexttok();expression(60);Console.print("BITAND")}
+		else if(c.val=="^"){nexttok();expression(70);Console.print("XOR")}
+		else if(c.val=="<"){nexttok();expression(90);Console.print("SML")}
+		else if(c.val==">"){nexttok();expression(90);Console.print("BIG")}
+		else if(c.val=="<="){nexttok();expression(90);Console.print("SMLE")}
+		else if(c.val==">="){nexttok();expression(90);Console.print("BIGE")}
+		else if(c.val=="=="){nexttok();expression(80);Console.print("EQL")}
+		else if(c.val=="!="){nexttok();expression(80);Console.print("NEQ")}
+		else if(c.val=="["){nexttok();expression(0);Console.print("GETADDR");readtok("]");}
+		else if(c.val=="("){nexttok();t=parse_args(")");Console.printf("CALL {0}",t);readtok(")");}
+		
+		else if(c.val=="?"){
 			nexttok();
-			expression(50);
-			Console.print("ADD")
+			false_l=label();
+			end_l=label();
+			Console.printf("JUMP_IF_FALSE {0}",false_l) 
+			expression(25); // true branch
+			Console.printf("JUMP {0}",end_l)
+			readtok(":")
+			Console.printf(false_l)
+			expression(25); // false branch
+			Console.printf(end_l)
 		}
-		else if(c.val=='-'){
-			nexttok();
-			expression(50);
-			Console.print("SUB")
-		}
-		else if(c.val=='*'){
-			nexttok();
-			expression(60);
-			Console.print("MUL")
-		}
-		else if(c.val=='/'){
-			nexttok();
-			expression(60);
-			Console.print("DIV")
-		}
-		else if(c=='%'){
-			nexttok();
-			expression(60);
-			Console.print("MOD")
-		}
+		else if(c.val=="or"){nexttok();expression(24);Console.print("CHOOSE")}
+		else if(c.val=="is"){nexttok();compile_str("'"+curtok().val+"'");nexttok();Console.print("ISA");}
+		else if(c.val=="||"){nexttok();l=label();Console.printf("JUMP_IF_TRUE {0}",l);expression(30);Console.printf(l)}
+		else if(c.val=="&&"){nexttok();l=label();Console.printf("JUMP_IF_FALSE {0}",l);expression(40);Console.printf(l)}
+		else if(c.val==";"){nexttok();return 0;}
 		else return 0;
 	}
 }
 function parse_args(end){
 	var cnt=0
-	while(curtok().type!=']'){
-		expression(20)
+	while(curtok().type!=end){
+		expression(10)
 		cnt+=1
 		if(curtok().type==',')readtok(',')
 	}
@@ -113,5 +159,4 @@ function parse_obj(){
 	Console.printf("LOADOBJ {0}",cnt)
 }
 tokenize(Console.read_line())
-Console.print(tokens)
 expression(0)
