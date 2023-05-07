@@ -111,6 +111,7 @@ function expression(precd){
 		else if(c.val=="["){nexttok();expression(0);Console.print("GETADDR");readtok("]");}
 		else if(c.val=="("){nexttok();t=parse_args(")");Console.printf("CALL {0}",t);readtok(")");}
 		
+		else if(c.val=="="){nexttok();expression(20);Console.print("ASSIGN")}
 		else if(c.val=="?"){
 			nexttok();
 			false_l=label();
