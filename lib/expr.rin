@@ -27,8 +27,12 @@ function prior(t){
 }
 parse_args=null
 parse_obj=null
+compile_new=null
 function compile_str(s){
 	Console.printf("LOADSTR '{0}'",s)
+}
+function compile_var(s){
+	Console.printf("LOADVAR '{0}'",s)
 }
 used_label=0
 function label(){
@@ -37,10 +41,41 @@ function label(){
 }
 function expression(precd){
 	c=curtok()
+	liter=precd==140&&pretok().type=="."
 	if(c.type=='('){
 		readtok('(')
 		expression(0)
 		readtok(')')
+	}
+	else if(c.type=="true"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADTRUE")};nexttok();}
+	else if(c.type=="false"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADFALSE")};nexttok();}
+	else if(c.type=="null"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADNULL")};nexttok();}
+	else if(c.type=="undefined"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADUNDEFINED")};nexttok();}
+	else if(c.type=="this"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADTHIS")};nexttok();}
+	else if(c.type=="super"){if(liter){compile_str(c.val);Console.print("GETADDR")}else{Console.print("LOADSUPER")};nexttok();}
+	else if(
+		c.type=="if"||c.type=="else"||c.type=="while"||c.type=="return"||c.type=="for"||
+		c.type=="break"||c.type=="continue"||c.type=="include"||c.type=="class"||c.type=="has"||
+		c.type=="or"||c.type=="is"||c.type=="all"||c.type=="operator"||c.type=="constructor"||
+		c.type=="public"||c.type=="protected"||c.type=="private"
+	){if(liter){compile_str(c.val);Console.print("GETADDR")}else{System.abort("expected a property name, given '{0}'".format(c.val))};}
+	else if(c.type=="var"){
+		if(liter){compile_str(c.val);Console.print("GETADDR")}
+		else{System.abort("'var' should not appear at this position")};
+		nexttok();
+	}
+	else if(c.type=="new"){
+		if(liter){compile_str(c.val);Console.print("GETADDR")}
+		else compile_new()
+		nexttok();
+	}
+	else if(c.type=="typeof"){
+		if(liter){nexttok();compile_str(c.val);Console.print("GETADDR")}
+		else{nexttok();expression(90);Console.print("TYPEOF")}
+	}
+	else if(c.type=="name"){
+		if(liter){readtok();compile_str(c.val);Console.print("GETADDR")}
+		else{compile_var(c.val)readtok();}
 	}
 	else if(c.type=='['){
 		readtok('[')
@@ -63,10 +98,6 @@ function expression(precd){
 	}
 	else if(c.type=="string"){
 		compile_str(c.val)
-		readtok();
-	}
-	else if(c.type=="name"){
-		Console.printf("LOADVAR {0}",c.val)
 		readtok();
 	}
 	else if(c.val=='+'){
@@ -102,6 +133,16 @@ function expression(precd){
 		else if(c.val=="|"){nexttok();expression(50);Console.print("BITOR")}
 		else if(c.val=="&"){nexttok();expression(60);Console.print("BITAND")}
 		else if(c.val=="^"){nexttok();expression(70);Console.print("XOR")}
+		else if(c.val=="+="){nexttok();expression(30);Console.print("ADDE")}
+		else if(c.val=="-="){nexttok();expression(30);Console.print("SUBE")}
+		else if(c.val=="*="){nexttok();expression(20);Console.print("MULE")}
+		else if(c.val=="/="){nexttok();expression(20);Console.print("DIVE")}
+		else if(c.val=="%="){nexttok();expression(20);Console.print("MODE")}
+		else if(c.val=="<<="){nexttok();expression(20);Console.print("LSHFE")}
+		else if(c.val==">>="){nexttok();expression(20);Console.print("RSHFE")}
+		else if(c.val=="|="){nexttok();expression(20);Console.print("BITORE")}
+		else if(c.val=="&="){nexttok();expression(20);Console.print("BITANDE")}
+		else if(c.val=="^="){nexttok();expression(20);Console.print("XORE")}
 		else if(c.val=="<"){nexttok();expression(90);Console.print("SML")}
 		else if(c.val==">"){nexttok();expression(90);Console.print("BIG")}
 		else if(c.val=="<="){nexttok();expression(90);Console.print("SMLE")}
@@ -110,7 +151,7 @@ function expression(precd){
 		else if(c.val=="!="){nexttok();expression(80);Console.print("NEQ")}
 		else if(c.val=="["){nexttok();expression(0);Console.print("GETADDR");readtok("]");}
 		else if(c.val=="("){nexttok();t=parse_args(")");Console.printf("CALL {0}",t);readtok(")");}
-		
+		else if(c.val=="."){nexttok();expression(140);}
 		else if(c.val=="="){nexttok();expression(20);Console.print("ASSIGN")}
 		else if(c.val=="?"){
 			nexttok();
