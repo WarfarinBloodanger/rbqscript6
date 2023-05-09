@@ -34,6 +34,10 @@ function curtok(){
 	if(tokidx>=tokens.length())return new token("<end>")
 	return tokens[tokidx]
 }
+function pretok(){
+	if(tokidx-1<0)return new token("<end>")
+	return tokens[tokidx-1]
+}
 function nexttok(){
 	tokidx+=1
 }
