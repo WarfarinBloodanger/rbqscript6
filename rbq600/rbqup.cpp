@@ -10,7 +10,7 @@ typedef vector<uchar> codeset;
 vector<string> str_pool;
 vector<double> num_pool;
 
-OPCODE NOP=0x88;
+OPCODE NOP=0x00;
 OPCODE LOAD0=0x10;
 OPCODE LOAD1=0x11;
 OPCODE LOAD2=0x12;
@@ -570,7 +570,42 @@ void initvm(){
 int version_number;
 inline int read2b(ifstream&fcin){int g=fcin.get()*0xff;g+=fcin.get();return g;}
 inline int read4b(ifstream&fcin){int g=fcin.get()*0xffffff;g+=fcin.get()*0xffff;g+=fcin.get()*0xff;g+=fcin.get();return g;}
-int nxtf=0;
+int nxtf=0,fulstr=0;
+inline string int2str(int x,int base){
+	string r="";int n=0;
+	if(x==0)return (string)"0";
+	if(x<0)n=1,x=-x;
+	while(x){
+		int v=x%base;
+		if(v<0)v-=base,x+=base;
+		if(v>=0&&v<=9)r=r+char('0'+v);
+		else r=r+char('A'+v-10);
+		x/=base;
+	}
+	reverse(r.begin(),r.end());
+	if(n)r="-"+r;
+	return r;
+}
+inline string strictstr(const string&str){
+	string r="";
+	for(auto a:str){
+		switch(a){
+			case '\a':r+="\\a";break;
+			case '\t':r+="\\t";break;
+			case '\n':r+="\\n";break;
+			case '\r':r+="\\r";break;
+			case '\b':r+="\\b";break;
+			case '\\':r+="\\\\";break;
+			case '"':r+="\"";break;
+			default:{
+				if(!isprint(a))r+="\\u00"+int2str(int(a),16);
+				else r+=a;
+				break;
+			}
+		}
+	}
+	return r;
+}
 void see(string arg){
 	codeset s;
 	ifstream fcin(arg,ios::binary);
@@ -587,7 +622,7 @@ void see(string arg){
 		g=read4b(fcin);
 		while(g--){
 			int r=read4b(fcin);string v="";
-			while(r--)v+=fcin.get();str_pool.push_back(v);
+			while(r--)v+=fcin.get();str_pool.push_back(strictstr(v));
 		}
 		g=read4b(fcin);
 		while(g--){
@@ -606,7 +641,7 @@ void see(string arg){
 	if(nxtf){
 		cout<<"String Constant Pool ( size="<<str_pool.size()<<" )"<<endl;
 		int t=0;
-		for(auto a:str_pool)printf("[%04d]    '%s'\n",t++,(a.size()<=20?a:a.substr(0,17)+"...").c_str());
+		for(auto a:str_pool)if(fulstr)printf("[%04d]    '%s'\n",t++,a.c_str()); else printf("[%04d]    '%s'\n",t++,(a.size()<=20?a:a.substr(0,17)+"...").c_str());
 		cout<<"\nNumber Constant Pool ( size="<<num_pool.size()<<" )"<<endl;
 		t=0;
 		for(auto a:num_pool)printf("[%04d]    %.12Lg\n",t++,a);
@@ -620,7 +655,7 @@ int main(int argc,char **argv){
 		if(argc<=1)exit(puts("Usage: rbqup <file1> <file2>...")&&1);
 		initvm();
 		int v=1;for(;v<argc;v++){
-			if(argv[v][0]=='-'&&argv[v][1]=='f')nxtf=1;
+			if(strlen(argv[v])>=2&&argv[v][0]=='-'&&argv[v][1]=='f')(strlen(argv[v])>=3&&argv[v][2]=='f')?fulstr=nxtf=1:nxtf=1;
 			else{
 				printf("\n--- File '%s' ---",argv[v]);
 				usedfuncs=1024,see(argv[v]),nxtf=0;
