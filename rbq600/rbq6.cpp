@@ -706,7 +706,7 @@ codeset parse_expr(int precd){
 			break;
 		}
 		case TOK_NEW:{
-			if(liter)concat(s,compile_str("var")),readtok(TOK_VAR),s.push_back(GETADDR);
+			if(liter)concat(s,compile_str("new")),readtok(TOK_VAR),s.push_back(GETADDR);
 			else concat(s,compile_new());break;
 			break;
 		}
