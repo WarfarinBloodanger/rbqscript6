@@ -488,7 +488,7 @@ void runbytes(const codeset&s){
 				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				addall();
-				output("JUMP",num2str(f),"to "+num2str(ip+4+f));
+				output("JUMP",num2str(f),"to "+num2str(ip+f+1));
 				break;
 			}
 			case JUMP_IF_FALSE:{
@@ -496,7 +496,7 @@ void runbytes(const codeset&s){
 				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				addall();
-				output("JUMP_IF_FALSE",num2str(f),"to "+num2str(ip+4+f));
+				output("JUMP_IF_FALSE",num2str(f),"to "+num2str(ip+f+1));
 				break;
 			}
 			case LOOP:{
@@ -504,7 +504,7 @@ void runbytes(const codeset&s){
 				uint f=s[ip]*0xffffff+s[ip+1]*0xffff+s[ip+2]*0xff+s[ip+3];
 				ip+=3;
 				addall();
-				output("LOOP",num2str(f),"to "+num2str(ip-f));
+				output("LOOP",num2str(f),"to "+num2str(ip-4-f));
 				break;
 			}
 			case RETURN:{
