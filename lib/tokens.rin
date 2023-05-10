@@ -46,6 +46,7 @@ function readtok(c){
 		if(tokens[tokidx].type!=c)System.abort("expected {0}".format(c))
 	}
 	tokidx+=1
+	return tokens[tokidx-1]
 }
 function getidtype(s){
 	if(s!="function")
@@ -53,7 +54,7 @@ function getidtype(s){
 	&&(s!="else")// return TOK_ELSE;
 	&&(s!="while")// return TOK_WHILE;
 	&&(s!="for")// return TOK_FOR;
-	&&(s!="// return")// return TOK_RET;
+	&&(s!="return")// return TOK_RET;
 	&&(s!="var")// return TOK_VAR;
 	&&(s!="break")// return TOK_BREAK;
 	&&(s!="continue")// return TOK_CTN;
