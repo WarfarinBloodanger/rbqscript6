@@ -1,4 +1,5 @@
 #include "tokens.rin"
+#include "scope.rin"
 
 function prior(t){
 	if(t==",")return 10;
@@ -31,8 +32,9 @@ compile_new=null
 function compile_str(s){
 	Console.printf("LOADSTR '{0}'",s)
 }
-function compile_var(s){
-	Console.printf("LOADVAR '{0}'",s)
+function compile_var(s,w){
+	if(w==undefined||w==null)w=0
+	Console.printf("LOADVAR {0}",getid(s,w))
 }
 used_label=0
 function label(){
@@ -97,7 +99,7 @@ function expression(precd){
 		readtok();
 	}
 	else if(c.type=="string"){
-		compile_str(c.val)
+		compile_str(c.val.substr(1,len(c.val)-2))
 		readtok();
 	}
 	else if(c.val=='+'){
@@ -119,6 +121,13 @@ function expression(precd){
 		readtok();
 		expression(120)
 		Console.print("BITNOT")
+	}
+	else if(c.val=='<')parse_lambda();
+	else if(c.type=="function"){
+		if(liter){compile_str("function");nexttok();Console.printf("GETADDR");}
+		else{
+			System.abort("there is something to do...")
+		}
 	}
 	else System.abort("unexpected {0}".format(c.val))
 	while(remain()&&prior(curtok().val)>precd){
@@ -173,6 +182,38 @@ function expression(precd){
 		else return 0;
 	}
 }
+function parse_decl(){
+	while(curtok().type=="name"){
+		name=readtok("name").val
+		compile_var(name,1)
+		if(curtok().type=="="){
+			nexttok();expression(20)
+		}
+		else Console.print("LOADNULL")
+		Console.print("ASSIGNLOCAL")
+		if(curtok().type!=",")break;
+		else nexttok(); 
+	}
+}
+type_check=[]
+function check_type(){for all(i:type_check)Console.print(type_check)}
+function parse_params(ender){
+	type_check=[]
+	var cnt=0
+	while(curtok().type!=ender){
+		compile_var(readtok("name").val,1)
+		if(curtok().type==":"){
+			nexttok();t=curtok().val;nexttok();
+			if(!isalpha(t[0]))System.abort("expected a type name after ':', not '{0}'".format(t))
+			if(t!="any"){
+				type_check.append("LOADSTR '{0}'".format('"'+t+'"'))
+				type_check.append("CHECKTYPE {0}".format(c))
+			}
+		}
+		cnt+=1
+		if(curtok().type==",")readtok(",");
+	}
+}
 function parse_args(end){
 	var cnt=0
 	while(curtok().type!=end){
@@ -200,5 +241,73 @@ function parse_obj(){
 	}
 	Console.printf("LOADOBJ {0}",cnt)
 }
+function compile_new(){
+	readtok("new")
+	var name=readtok("name").val
+	var cnt=0
+	readtok("(")
+	while(1){
+		if(curtok().type==",")nexttok();
+		else if(curtok().type==")"){nexttok();break;}
+		else{expression(0);cnt+=1;}
+	}
+	compile_str('"'+name+'"')
+	Console.printf("CONSTRUCT {0}",cnt)
+}
+
+loop_stack=[]
+compile=null
+function compile_block(frame){
+	if(frame)Console.print("NEWFRAME")
+	new_scope();
+	while(curtok().type!="}")compile();
+	del_scope();
+	if(frame)Console.print("DELFRAME")
+}
+function compile_if(){
+	var false_l=label()
+	var end_l=label()
+	expression(0) // condition
+	Console.printf("JUMP_IF_FALSE {0}",false_l)
+	compile() // true branch
+	Console.printf("JUMP {0}",end_l)
+	Console.print(false_l)
+	if(curtok().type=="else"){nexttok();compile();} // false branch
+	Console.print(end_l)
+}
+function compile_while(){
+	var start_l=label()
+	var loop_l=label()
+	var end_l=label();
+	Console.printf("NEWFRAME");
+	Console.print(start_l)
+	expression(0);
+	Console.printf("JUMP_IF_FALSE {0}",end_l)
+	loop_stack.push([loop_l,end_l])
+	compile()
+	loop_stack.pop()
+	Console.print(loop_l)
+	Console.printf("LOOP {0}",start_l)
+	Console.print(end_l)
+}
+function compile_jumper(k){
+	if(loop_stack.length()==0)System.abort("{0} should be in a loop".format(k))
+	Console.printf("JUMP {0}",loop_stack.back()[k=="break"?1:0])
+}
+function compile(){
+	if(curtok().type=="if"){nexttok();compile_if();}
+	else if(curtok().type=="{"){nexttok();compile_block();readtok("}");}
+	else if(curtok().type=="while"){nexttok();compile_while();}
+	else if(curtok().type=="return"){nexttok();curtok().type==';'?Console.print("LOADNULL"):expression(0);Console.print("RETURN")}
+	else if(curtok().type=="break"||curtok().type=="continue"){compile_jumper(curtok().val);nexttok();}
+	else if(curtok().type=="var"){nexttok();parse_decl();}
+	else {expression(0);Console.print("POP")}
+	if(curtok().type==";")nexttok();
+}
+function init(){
+	new_scope()
+	usedname=1024
+}
+init()
 tokenize(Console.read_line())
-expression(0)
+compile()
