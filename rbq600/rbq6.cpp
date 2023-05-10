@@ -934,7 +934,7 @@ void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 			s[i+3]==BREAKHOLDER&&s[i+4]==BREAKHOLDER&&s[i+5]==BREAKHOLDER&&
 			s[i+6]==BREAKHOLDER&&s[i+7]==BREAKHOLDER&&s[i+8]==BREAKHOLDER
 		){
-			uint offset=s.size()-i-4+stepsize;
+			uint offset=s.size()-i-4+stepsize-1;
 			
 			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
@@ -945,7 +945,7 @@ void fillholder(codeset&s,const uint&bsize,const uint&stepsize){
 			s[i+3]==CTNHOLDER&&s[i+4]==CTNHOLDER&&s[i+5]==CTNHOLDER&&
 			s[i+6]==CTNHOLDER&&s[i+7]==CTNHOLDER&&s[i+8]==CTNHOLDER
 		){
-			uint offset=bsize-i-5+1;
+			uint offset=s.size()-i-4-6;
 			s[i]=JUMP,b=loadint(offset);
 			s[i+1]=b[0],s[i+2]=b[1],s[i+3]=b[2],s[i+4]=b[3];
 			s[i+5]=NOP,s[i+6]=NOP,s[i+7]=NOP,s[i+8]=NOP;
