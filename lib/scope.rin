@@ -1,0 +1,30 @@
+scopes=[]
+used_upvalues=[]
+namecnt=[]
+names={}
+usedname=0
+function new_scope(){
+	scopes.push({})
+	namecnt.push(0)
+	used_upvalues.push({})
+}
+function del_scope(){
+	scopes.pop()
+	namecnt.pop()
+	used_upvalues.pop() 
+}
+function getid(s,local){
+	if(local==undefined||local==null)local=0
+	if(!local){
+		for(i=scopes.length()-1;i>=0;i-=1){
+			if(scopes[i] has s){
+				for(j=scopes.length()-1;j>i;j-=1) used_upvalues[j][scopes[i][s]]=1
+				return scopes[i][s]
+			}
+		}
+	}
+	usedname+=1
+	names[usedname]=s
+	scopes.back()[s]=usedname
+	return usedname
+}
